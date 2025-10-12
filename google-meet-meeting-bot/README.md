@@ -5,8 +5,6 @@ A comprehensive meeting automation bot that can join Google Meet sessions, recor
 ## 🚀 Features
 
 - **Automated Meeting Joining**: Uses Playwright to automatically join Google Meet sessions
-- **Audio Recording**: Captures meeting audio for processing
-- **AI Transcription**: Leverages AssemblyAI for accurate speech-to-text conversion
 - **Intelligent Summarization**: Generates meeting summaries using AI
 - **Database Storage**: PostgreSQL database for storing meeting data and summaries
 - **Docker Support**: Fully containerized application for easy deployment
@@ -203,4 +201,5 @@ npm run test:bot
 4. **Docker build failures**
    - Clear Docker cache: `docker system prune`
    - Rebuild images: `docker-compose build --no-cache`
+
 
