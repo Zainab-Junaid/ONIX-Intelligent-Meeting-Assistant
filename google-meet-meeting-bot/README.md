@@ -11,7 +11,6 @@ A comprehensive meeting automation bot that can join Google Meet sessions, recor
 - **Database Storage**: PostgreSQL database for storing meeting data and summaries
 - **Docker Support**: Fully containerized application for easy deployment
 - **REST API**: Backend API for managing meetings and accessing data
-- **Web Frontend**: Simple web interface for monitoring and control
 
 ## 🏗️ Architecture
 
@@ -205,25 +204,3 @@ npm run test:bot
    - Clear Docker cache: `docker system prune`
    - Rebuild images: `docker-compose build --no-cache`
 
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-- AssemblyAI for transcription services
-- Playwright for browser automation
-- Prisma for database management
-- Express.js for the API framework
-
-## 📞 Support
-
-For support and questions, please open an issue in the GitHub repository.
