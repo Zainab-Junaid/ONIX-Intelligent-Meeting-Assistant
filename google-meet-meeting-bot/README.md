@@ -25,7 +25,7 @@ This project uses a microservices architecture with the following components:
 - Node.js 18+
 - Docker and Docker Compose
 - PostgreSQL (or use Docker)
-- Google Meet account
+- Google account
 - AssemblyAI API key
 
 ## 🛠️ Installation
@@ -201,5 +201,6 @@ npm run test:bot
 4. **Docker build failures**
    - Clear Docker cache: `docker system prune`
    - Rebuild images: `docker-compose build --no-cache`
+
 
 
