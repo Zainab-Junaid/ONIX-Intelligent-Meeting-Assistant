@@ -445,26 +445,6 @@ async function migrateBotDataToONIX() {
 }
 ```
 
-## Security Checklist
-
-- [ ] Firebase Auth middleware implemented
-- [ ] All API endpoints require authentication
-- [ ] Database credentials rotated
-- [ ] User data properly isolated
-- [ ] API rate limiting implemented
-- [ ] Input validation and sanitization
-- [ ] HTTPS enforced in production
-- [ ] Secrets management implemented
-- [ ] Audit logging enabled
-
-## Performance Considerations
-
-- **Bot Scaling:** Implement queue system for multiple concurrent meetings
-- **Database Optimization:** Add indexes for user queries
-- **Caching:** Implement Redis for frequently accessed data
-- **CDN:** Use CDN for static assets and transcripts
-- **Monitoring:** Add APM for performance tracking
-
 ## Rollback Plan
 
 1. **Phase 1 Rollback:** Disable Firebase Auth, revert to original endpoints
@@ -477,6 +457,6 @@ async function migrateBotDataToONIX() {
 - **Functionality:** Bot successfully joins meetings and captures transcripts
 - **Integration:** Chrome extension can start and monitor meetings
 - **Data Sync:** Transcripts properly synced to Firestore
-- **Performance:** < 5 second bot join time, < 30 second summary generation
+- **Performance:** < 80 second bot join time, < 30 second summary generation
 - **Security:** All endpoints authenticated, no data leaks
 - **User Experience:** Seamless integration with existing ONIX workflow
