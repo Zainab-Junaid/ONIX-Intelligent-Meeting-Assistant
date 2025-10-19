@@ -215,11 +215,6 @@ google-meet-meeting-bot/
 └── README.md
 ```
 
-### Bonus: Want Something More Scalable?
- If you're set making this production-ready or integrating with other platforms (Zoom, Teams, Meet), check out [Recall.ai](https://www.recall.ai/). We provide a [Desktop Recorder SDK](https://docs.recall.ai/docs/desktop-sdk) and multi-platform meeting bot infrastructure, which can simplify and scale what this PoC demonstrates.
-
-I know I'm biased, but I high recommended looking into the Recall.ai API if you're looking to move beyond prototypes or checking out some of [our customers and case studies](https://recall-ai.webflow.io/customers) if you're wondering how you might leverage conversation data in your product.
-
 ### Appendix
 To confirm your prisma tables you can run 
 ```
@@ -229,8 +224,3 @@ then
 ```
 \dt
 ```
-
-### Huge Thanks To...
-Amanda for giving me the opportunity to work on this project. YK for showing me the ropes. Antonio for the eng side onboarding. An an extra huge shoutout to Gerry for his invaluable feedback which has made this so simple to run that my mom (not an engineer) could do it. The entire Recall.ai team for being such a stellar and generous team!
-
-<img src="https://recall.ai/pixel-7f38da2c95a84e169c43e6b1d14c7e29?repo=google-meet-meeting-bot" width="1" height="1" style="display:none;" alt="" />
