@@ -1,206 +1,236 @@
 # Google Meet Meeting Bot
 
-A comprehensive meeting automation bot that can join Google Meet sessions, record audio, generate transcriptions, and provide intelligent summaries using AI.
+This is a PoC that joins a Google Meet, scrapes live captions, sends captions to OpenAI for summarization, and stores the transcript and summary in PostgreSQL. I've added a small frontend to allow users to submit meeting links.
 
-## 🚀 Features
+If you're interested in the process, reasoning, demos, and more, [check out the blog](https://www.recall.ai/blog/how-we-built-an-in-house-google-meet-bot).
 
-- **Automated Meeting Joining**: Uses Playwright to automatically join Google Meet sessions
-- **Intelligent Summarization**: Generates meeting summaries using AI
-- **Database Storage**: PostgreSQL database for storing meeting data and summaries
-- **Docker Support**: Fully containerized application for easy deployment
-- **REST API**: Backend API for managing meetings and accessing data
+## Hosted Google Meet Bot
+If you don't want to host a bot yourself, check out [Recall.ai](https://www.recall.ai/?utm_source=github&utm_medium=sampleapp&utm_campaign=google-meet-bot-from-scratch)
 
-## 🏗️ Architecture
+## Tech Stack
+- Node.js / TypeScript
+- Playwright (headless browser bot)
+- OpenAI API
+- PostgreSQL
+- Docker + Docker Compose
+- Prisma ORM
+- Express (API) + simple HTML (frontend)
 
-This project uses a microservices architecture with the following components:
+## Steps
 
-- **Backend** (`src/backend/`): Express.js API server with Prisma ORM
-- **Bot** (`src/bot/`): Meeting automation logic
-- **Frontend** (`src/frontend/`): Web interface
-- **Playwright** (`src/playwright/`): Browser automation for Google Meet
-- **Database**: PostgreSQL with Prisma migrations
+- Join Meet using Playwright
+- Scrape captions from the DOM
+- Flush transcript to PostgreSQL
+- Call OpenAI for summary generation
+- Store summary in PostgreSQL
+- Create web UI so that meeting links can be submitted
 
-## 📋 Prerequisites
+## How to run the project
 
-- Node.js 18+
-- Docker and Docker Compose
-- PostgreSQL (or use Docker)
-- Google account
-- AssemblyAI API key
+1. Install prereqs
+    - [Docker](https://docs.docker.com/get-started/get-docker/) ()
+    - Install node and a package manager
+        - Option 1: 
+            - Brew install node by opening terminal and running `brew install node` then confirming installation by running `node -v` and `npm -v` (if you don't have homebrew installed, start by [installing homebrew](https://brew.sh/) on your machine)
+        - Option 2: 
+            - Open terminal and run `sudo apt install nodejs` then run `node -v` to confirm installation
+            - npm on Linux: run `sudo apt install npm` then `npm -v` to confirm installation
+        
+    - [Git](https://git-scm.com/downloads)
+    - A second [Google account](https://accounts.google.com) to join meetings (you will manually start a meeting using one account of your choosing and then your bot will need an account to join the meetings from)
+    - An [OpenAI API key](https://platform.openai.com/account/api-keys)
+    - Install Playwright `npm install -D playwright` then `npx playwright install`
 
-## 🛠️ Installation
+2. Clone the Repository
 
-1. **Clone the repository**
-   ```bash
-   git clone <your-repo-url>
-   cd google-meet-meeting-bot
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Set up environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
-
-4. **Generate Prisma client**
-   ```bash
-   npm run generate
-   ```
-
-5. **Run database migrations**
-   ```bash
-   npm run migrate
-   ```
-
-## 🚀 Quick Start
-
-### Using Docker (Recommended)
-
-1. **Start all services**
-   ```bash
-   docker-compose up -d
-   ```
-
-2. **Check service status**
-   ```bash
-   docker-compose ps
-   ```
-
-3. **View logs**
-   ```bash
-   docker-compose logs -f backend
-   ```
-
-### Development Mode
-
-1. **Start database**
-   ```bash
-   docker-compose up postgres -d
-   ```
-
-2. **Run development servers**
-   ```bash
-   npm run dev
-   ```
-
-## 🔧 Configuration
-
-### Environment Variables
-
-Create a `.env` file with the following variables:
-
-```env
-# Database
-DATABASE_URL="postgresql://meetingbot:supersecret@localhost:5432/meetingbotpoc"
-
-# AssemblyAI
-ASSEMBLYAI_API_KEY="your_assemblyai_api_key"
-
-# Google Meet
-GOOGLE_MEET_URL="https://meet.google.com/your-meeting-id"
-
-# Server
-PORT=3001
-NODE_ENV=development
+```bash
+git clone https://github.com/recallai/google-meet-meeting-bot.git
+cd google-meet-meeting-bot
 ```
 
-### Google Meet Authentication
+3. run ```npm install```
 
-1. Generate authentication file:
-   ```bash
-   npm run gen:auth
-   ```
+4. To copy the .env.sample file and rename to .env in root by running this: 
 
-2. Follow the prompts to authenticate with Google
+    ``` 
+    cp .env.sample .env
+    ```
 
-## 📖 API Endpoints
+    replacing the placeholder values for your own values:
+    ```
+    DATABASE_URL=postgresql://meetingbot:supersecret@postgres:5432/meetingbotpoc
+    OPENAI_API_KEY=your-openai-api-key
+    GOOGLE_ACCOUNT_USER=your-second-google-email
+    GOOGLE_ACCOUNT_PASSWORD=your-second-google-password
+    ```
 
-### Meetings
-- `GET /api/meetings` - List all meetings
-- `POST /api/meetings` - Create new meeting
-- `GET /api/meetings/:id` - Get meeting details
-- `PUT /api/meetings/:id` - Update meeting
-- `DELETE /api/meetings/:id` - Delete meeting
+5. Run the `generate-auth.js` script in `scripts/`
+```
+npm run gen:auth
+```
 
-### Summaries
-- `GET /api/summaries` - List all summaries
-- `GET /api/summaries/:id` - Get summary details
-- `POST /api/summaries` - Generate new summary
+> Do NOT commit your `auth.json` or `.env` file to Git. I've already added both to `.gitignore`
 
-## 🐳 Docker Services
 
-- **postgres**: PostgreSQL database
-- **backend**: Express.js API server
-- **bot**: Meeting automation bot
+7. Run your code: 
+```
+docker-compose build --no-cache
+docker compose up -d
+```
+> If you get an error when you run the above, make sure your Docker desktop app is open (the app you installed at the beginning)
+8. Run Database Migrations
 
-## 📁 Project Structure
+Prisma's migration files are already included in the repo. To apply copy and paste the following in terminal (the first cmd opens a shell and the second deploys the migration):
+ 
+```
+docker compose exec backend sh
+npx prisma migrate deploy
+```
+
+This will apply the schema to your local PostgreSQL instance (spun up by Docker). To confirm you can try the cmds in the appendix
+
+and you should see tables now, but that is not necessary.
+
+> Note: If you're modifying the schema yourself, use `npx prisma migrate dev` instead to generate new migrations.
+
+9. Exit out of your shell by typing `exit` and hitting enter then re-run your code: 
+```
+docker-compose build --no-cache
+docker compose up -d
+```
+
+10. Open a **second terminal** window and run
+```
+cd src/frontend
+npm install
+npm run dev
+```
+
+11. Start a Google Meet
+- Start a meeting with your primary Google account (not the bot account you created)
+- copy the url before the '?' (put in a note or somewhere you can return to)
+- Go to the "Host Controls" in the bottom right-hand corner
+- Select "Open" in "Meeting Access"
+
+12. Navigate to your basic frontend
+- Open a new tab
+- Paste the following url: 
+http://localhost:5173
+- Copy the meeting url you stored in the previous step
+- Paste it into your bar and hit submit
+
+13. Conduct your meeting
+- Make sure you are unmuted in the Google Meet tab you have open 
+- Have a conversation and when you want your bot to leave, either end the meeting or say "Notetaker, please leave" 
+- The bot will send the transcript to OpenAI if you've provided a valid API key and your summary will be stored. 
+
+
+14. Checking your data
+to access postgres go to the terminal window where you built docker and run: 
+```
+docker exec -it meetingbot-db psql -U meetingbot -d meetingbotpoc
+```
+then 
+- To see your meeting summary after the call:
+```sql
+SELECT "meetingId",
+       "generatedAt",
+       "model",
+       "summaryText"
+FROM   "MeetingSummary"
+ORDER  BY "generatedAt" DESC
+LIMIT  1;
+```
+- To see your transcript: 
+```sql
+SELECT t."meetingId",
+       t."createdAt",
+       json_agg(
+         json_build_object(
+           'start',   s.start,
+           'end',     s."end",
+           'speaker', s.speaker,
+           'text',    s.text
+         )
+         ORDER BY s.start
+       ) AS segments
+FROM   "MeetingTranscript" t
+JOIN   "Segment"           s USING ("meetingId")
+WHERE  t."meetingId" = (
+          SELECT "meetingId"
+          FROM   "MeetingTranscript"
+          ORDER  BY "createdAt" DESC
+          LIMIT  1
+      )
+GROUP  BY t."meetingId", t."createdAt";
+```
+
+> **REMEMBER to hit 'q' everytime you want to exit out of the specific query results from the queries above and when you are done looking into what is in your database (postgreSQL) type `exit` again**
+
+Happy meeting!
+
+## Project Structure
 
 ```
 google-meet-meeting-bot/
+├── scripts/
+│   ├── generate-auth.js
 ├── src/
-│   ├── backend/          # Express.js API server
-│   ├── bot/             # Meeting bot logic
-│   ├── frontend/        # Web interface
-│   ├── playwright/      # Browser automation
-│   └── models.ts        # Shared data models
-├── scripts/             # Utility scripts
-├── docker-compose.yml   # Docker services configuration
-├── Dockerfile.be        # Backend Docker image
-├── Dockerfile.bot       # Bot Docker image
-└── package.json         # Workspace configuration
+│   ├── backend/
+│   │   ├── migrations/
+│   │   ├── server.ts
+│   │   ├── package.json
+│   │   ├── package-lock.json
+│   │   ├── tsconfig.json
+│   │   ├── launchBot.ts
+│   │   └── schema.prisma
+│   ├── bot/
+│   │   ├── index.ts
+│   │   ├── package.json
+│   │   ├── package-lock.json
+│   │   └── tsconfig.json
+│   └── frontend/
+│       ├── index.html   # form
+│       ├── main.ts
+│       ├── style.css
+│       ├── tsconfig.json
+│       ├── package.json
+│       └── package-lock.json
+├── playwright/
+│   ├── Dockerfile
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── tsconfig.json
+│   ├── runBot.ts
+│   ├── storage.ts
+│   ├── models.ts
+│   └── summarize.ts
+├── package.json
+├── tsconfig.json
+├── .env
+├── Dockerfile.be
+├── Dockerfile.bot
+├── docker-compose.yml
+├── auth.json            # created by logging into the site via playwright and then storing credentials
+└── README.md
 ```
 
-## 🔄 Development Workflow
+### Bonus: Want Something More Scalable?
+ If you're set making this production-ready or integrating with other platforms (Zoom, Teams, Meet), check out [Recall.ai](https://www.recall.ai/). We provide a [Desktop Recorder SDK](https://docs.recall.ai/docs/desktop-sdk) and multi-platform meeting bot infrastructure, which can simplify and scale what this PoC demonstrates.
 
-1. **Database changes**: Update `src/backend/schema.prisma` and run migrations
-2. **API changes**: Modify files in `src/backend/`
-3. **Bot logic**: Update files in `src/bot/` and `src/playwright/`
-4. **Frontend**: Modify files in `src/frontend/`
+I know I'm biased, but I high recommended looking into the Recall.ai API if you're looking to move beyond prototypes or checking out some of [our customers and case studies](https://recall-ai.webflow.io/customers) if you're wondering how you might leverage conversation data in your product.
 
-## 🧪 Testing
-
-```bash
-# Run all tests
-npm test
-
-# Run specific test suites
-npm run test:backend
-npm run test:bot
+### Appendix
+To confirm your prisma tables you can run 
+```
+docker exec -it meetingbot-db psql -U meetingbot -d meetingbotpoc
+```
+then
+```
+\dt
 ```
 
-## 📝 Scripts
+### Huge Thanks To...
+Amanda for giving me the opportunity to work on this project. YK for showing me the ropes. Antonio for the eng side onboarding. An an extra huge shoutout to Gerry for his invaluable feedback which has made this so simple to run that my mom (not an engineer) could do it. The entire Recall.ai team for being such a stellar and generous team!
 
-- `npm run dev` - Start development servers
-- `npm run build` - Build all components
-- `npm run generate` - Generate Prisma client
-- `npm run migrate` - Run database migrations
-- `npm run studio` - Open Prisma Studio
-- `npm run gen:auth` - Generate Google authentication
-
-## 🚨 Troubleshooting
-
-### Common Issues
-
-1. **Database connection failed**
-   - Ensure PostgreSQL is running
-   - Check DATABASE_URL in .env
-
-2. **AssemblyAI API errors**
-   - Verify ASSEMBLYAI_API_KEY is correct
-   - Check API quota and billing
-
-3. **Google Meet authentication issues**
-   - Regenerate auth.json using `npm run gen:auth`
-   - Ensure proper Google account permissions
-
-4. **Docker build failures**
-   - Clear Docker cache: `docker system prune`
-   - Rebuild images: `docker-compose build --no-cache`
-
-
-
+<img src="https://recall.ai/pixel-7f38da2c95a84e169c43e6b1d14c7e29?repo=google-meet-meeting-bot" width="1" height="1" style="display:none;" alt="" />

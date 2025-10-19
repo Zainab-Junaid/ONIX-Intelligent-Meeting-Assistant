@@ -1,21 +1,36 @@
 // src/backend/botLauncher.ts
 import Docker = require("dockerode"); // safe import for TS projects
+import fs from "fs";
 // import Docker from "dockerode";    // alternative if your tsconfig has esModuleInterop
 
 // init Docker client
 const docker = new Docker();
 
 // launch Docker container to run mtg bot
-export async function launchBotContainer(meetingUrl: string, jobId: string) {
+export async function launchBotContainer(meetingUrl: string, jobId: string, userId?: string, meetingTitle?: string) {
   // assign container a unique name using timestamp
   const containerName = `meetingbot-${Date.now()}`;
+
+  // Prepare service account JSON for the child container
+  let saJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? "";
+  const saPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (!saJson && saPath) {
+    try {
+      saJson = fs.readFileSync(saPath, "utf8");
+    } catch {}
+  }
 
   const env = [
     `MEETING_URL=${meetingUrl}`,
     `JOB_ID=${jobId}`,
+    `USER_ID=${userId || ""}`,
+    `MEETING_TITLE=${meetingTitle || ""}`,
     `GOOGLE_ACCOUNT_USER=${process.env.GOOGLE_ACCOUNT_USER ?? ""}`,
     `GOOGLE_ACCOUNT_PASSWORD=${process.env.GOOGLE_ACCOUNT_PASSWORD ?? ""}`,
     `DATABASE_URL=${process.env.DATABASE_URL ?? ""}`,
+    `ENABLE_FIRESTORE=${process.env.ENABLE_FIRESTORE ?? ""}`,
+    `FIREBASE_SERVICE_ACCOUNT_JSON=${saJson}`,
+    // We avoid relying on file mounts inside the child bot container.
     `ASSEMBLYAI_API_KEY=${process.env.ASSEMBLYAI_API_KEY ?? ""}`,
   ];
 
