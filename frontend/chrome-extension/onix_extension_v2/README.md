@@ -15,17 +15,15 @@ A browser extension that captures real-time meeting audio and provides live tran
 ## Example Output
 
 ```
-Uswah: Hello everyone, I am here to introduce a concept.
-Iqra: Yes, please continue with the discussion.
-Speaker 1: That sounds interesting, can you elaborate?
-Uswah: Of course, let me explain the details...
-```
+Speaker 1: Hello everyone, I am here to introduce a concept.
+Speaker 2: Yes, please continue with the discussion.
+
 
 ## Architecture
 
 - **Frontend**: Chrome Extension (HTML, CSS, JavaScript)
 - **Backend**: Node.js server with WebSocket support
-- **Transcription**: OpenAI Whisper
+- **Transcription**: WebSpeech API
 - **Speaker Diarization**: pyannote-audio (optional)
 - **Database**: Firebase Firestore
 
@@ -36,15 +34,7 @@ Uswah: Of course, let me explain the details...
 - Chrome browser
 - FFmpeg (for audio processing)
 
-## Installation
 
-### 1. Clone and Setup
-
-```bash
-git clone <your-repo>
-cd onix_extension
-python setup.py
-```
 
 ### 2. Manual Setup (Alternative)
 
