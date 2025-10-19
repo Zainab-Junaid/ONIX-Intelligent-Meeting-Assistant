@@ -8,10 +8,11 @@
     "dev": "ts-node-dev --respawn src/bot/index.ts"
   },
   "dependencies": {
+    "@prisma/client": "^5.15.0",
     "cors": "^2.8.5",
     "express": "^5.1.0",
-    "uuid": "^9.0.0",
-    "@prisma/client": "^5.15.0"
+    "meetingbotpoc": "file:../..",
+    "uuid": "^9.0.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

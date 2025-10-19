@@ -9,18 +9,23 @@ datasource db {
 }
 
 model MeetingTranscript {
-    id        String    @id @default(uuid())
-    meetingId String    @unique
-    createdAt DateTime
-    segments  Segment[]
+    id          String    @id @default(uuid())
+    meetingId   String    @unique
+    userId      String?
+    meetingTitle String?
+    createdAt   DateTime
+    segments    Segment[]
 }
 
 model MeetingSummary {
-    id          String   @id @default(uuid())
-    meetingId   String
-    summaryText String
-    generatedAt DateTime
-    model       String
+    id           String   @id @default(uuid())
+    meetingId    String
+    userId       String?
+    meetingTitle String?
+    summaryText  String
+    generatedAt  DateTime
+    model        String
+    isFallback   Boolean  @default(false)
 }
 
 model Segment {
@@ -35,10 +40,13 @@ model Segment {
 }
 
 model MeetingJob {
-  id          String   @id @default(uuid())
-  meetingUrl  String
-  status      String   @default("pending")
-  meetingId   String? 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(uuid())
+  userId       String?
+  meetingUrl   String
+  meetingTitle String?
+  status       String   @default("pending")
+  meetingId    String? 
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
+

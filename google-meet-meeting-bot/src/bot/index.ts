@@ -1,4 +1,5 @@
 import { runBot } from "../playwright/runBot";
+import { getMeetingJob } from "../storage";
 
 // immediately runs bot logic (launchBot.ts specifies to run this file)
 (async () => {
@@ -12,7 +13,7 @@ import { runBot } from "../playwright/runBot";
   }
 
   try {
-    const meetingId = await runBot(url);
+        const meetingId = await runBot(url);
     console.log(`Bot finished, meetingId=${meetingId}`);
 
     // send job completion to backend to summarize and update

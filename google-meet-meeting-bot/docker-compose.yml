@@ -23,6 +23,7 @@ services:
       - .env
     environment:
       - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY}
+      - DATABASE_URL=postgresql://meetingbot:supersecret@postgres:5432/meetingbotpoc
     depends_on:
       - postgres
       - bot
@@ -37,8 +38,9 @@ services:
       dockerfile: Dockerfile.bot
     image: meetingbot-bot
     entrypoint: ["true"]
+    environment: []
+    volumes: []
     networks: [meetingbot]
-
 
 volumes:
   pgdata:

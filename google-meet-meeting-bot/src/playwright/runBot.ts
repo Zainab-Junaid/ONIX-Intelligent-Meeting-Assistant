@@ -1,7 +1,7 @@
 import { BrowserContext, Page, chromium } from "playwright";
 import { saveTranscriptBatch, testDatabaseConnection } from "../storage";
 import { v4 as uuidv4 } from "uuid";
-import { Segment } from "src/models";
+import { Segment } from "../models";
 
 // bot will leave the meeting immediately if it hears any of the following phrases
 const EXIT_PHRASES = [
@@ -14,10 +14,13 @@ const EXIT_PHRASES = [
 // flush interval to save captions
 const FLUSH_EVERY_MS = 1_000;
 
-// selector used to detect the meeting has ended
+// selector used to detect the meeting has ended or bot was removed
 const LEAVE_BANNER_SEL =
   'body > div[role="heading"]:has-text("You left the meeting"),' +
-  'body > div[role="heading"]:has-text("You’ve left the call")';
+  'body > div[role="heading"]:has-text("You’ve left the call"),' +
+  'body:has(div:has-text("You were removed")),' +
+  'body:has(div:has-text("You’ve been removed")),' +
+  'body:has(div:has-text("removed from the meeting"))';
 
 // launches broswer, joins Google Meet, records captions
 export async function runBot(url: string): Promise<string> {
@@ -31,9 +34,13 @@ export async function runBot(url: string): Promise<string> {
     throw new Error("Database connection failed - cannot proceed");
   }
 
+  // Get userId and meetingTitle from environment (passed from backend)
+  const userId = process.env.USER_ID;
+  const meetingTitle = process.env.MEETING_TITLE;
+  
   // ensures meeting always exists
   console.log(`🚀 Creating initial meeting transcript for ${meetingId}`);
-  await saveTranscriptBatch(meetingId, createdAt, [], true);
+  await saveTranscriptBatch(meetingId, createdAt, [], true, userId, meetingTitle);
   console.log(`✅ Initial meeting transcript created for ${meetingId}`);
 
   const browser = await chromium.launch({
@@ -130,6 +137,8 @@ async function scrapeCaptions(
   meetingId: string,
   createdAt: Date,
 ): Promise<string> {
+  const userId = process.env.USER_ID;
+  const meetingTitle = process.env.MEETING_TITLE;
   // index = caption timing, flushedCount = how many segments have been saved
   // exitRequested = exit condition, segments = finalized segments, activeSegments = ongoing segment for speaker
   let index = 0;
@@ -144,19 +153,15 @@ async function scrapeCaptions(
       text.toLowerCase(),
     );
 
-  // browser-side func to receive captions from injected observer
-  await page.exposeFunction(
-    "onCaption",
-    async (speaker: string, text: string) => {
+  // Create a closure to capture userId for the callback
+  const createCaptionHandler = () => {
+    return async (speaker: string, text: string) => {
       const caption = text.trim();
       if (!caption) return;
 
       console.log(`🗣️ ${speaker}: ${caption}`); // Real-time logging
 
-      // Reset activity timer on new caption
-      if (typeof resetActivityTimer === 'function') {
-        resetActivityTimer();
-      }
+      // Activity tracking removed - summaries only generated when meeting ends
 
       const normalized = caption.toLowerCase();
       const isExit = EXIT_PHRASES.some((p) => normalized.includes(p));
@@ -195,23 +200,50 @@ async function scrapeCaptions(
       // if exit = triggered, flush curr captions
       if (isExit) {
         const finalSegments = Array.from(activeSegments.values());
-        await saveTranscriptBatch(meetingId, createdAt, finalSegments, true);
+        await saveTranscriptBatch(meetingId, createdAt, finalSegments, true, userId, meetingTitle);
       }
-    },
+    };
+  };
+
+  // browser-side func to receive captions from injected observer
+  await page.exposeFunction(
+    "onCaption",
+    createCaptionHandler()
   );
 
-  // Helper: trigger summary generation against backend
+  // Helper: trigger summary generation against backend with retry logic
   const triggerSummary = async () => {
-    try {
-      const summaryRes = await fetch(`http://backend:3001/debug/generate-summary/${meetingId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (summaryRes.ok) console.log("✅ Summary trigger succeeded (shutdown handler)");
-      else console.error(`❌ Summary trigger failed (shutdown handler) ${summaryRes.status}`);
-    } catch (e) {
-      console.error("❌ Summary trigger error (shutdown handler):", e);
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        console.log(`🤖 Attempting summary generation (attempt ${retryCount + 1}/${maxRetries})...`);
+        const summaryRes = await fetch(`http://backend:3001/debug/generate-summary/${meetingId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        
+        if (summaryRes.ok) {
+          console.log("✅ Summary generation succeeded!");
+          return; // Success, exit retry loop
+        } else {
+          console.error(`❌ Summary generation failed with status: ${summaryRes.status} (attempt ${retryCount + 1}/${maxRetries})`);
+          const errorText = await summaryRes.text().catch(() => 'Unknown error');
+          console.error(`❌ Error details: ${errorText}`);
+        }
+      } catch (e) {
+        console.error(`❌ Summary generation network error (attempt ${retryCount + 1}/${maxRetries}):`, e);
+      }
+      
+      retryCount++;
+      if (retryCount < maxRetries) {
+        console.log(`🔄 Retrying in 3 seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
     }
+    
+    console.error(`❌ CRITICAL: Summary generation failed after ${maxRetries} attempts - manual intervention required`);
   };
 
   // Helper: Generate summary immediately with detailed logging
@@ -224,26 +256,52 @@ async function scrapeCaptions(
       const finalSegments = Array.from(activeSegments.values());
       if (finalSegments.length > 0) {
         console.log(`💾 Final flush: saving ${finalSegments.length} remaining segments...`);
-        await saveTranscriptBatch(meetingId, createdAt, finalSegments, true);
+        await saveTranscriptBatch(meetingId, createdAt, finalSegments, true, userId, meetingTitle);
         console.log(`✅ Final segments saved to database`);
       }
 
-      // Now generate summary
-      console.log(`🤖 Calling AssemblyAI to generate summary...`);
-      const summaryRes = await fetch(`http://backend:3001/debug/generate-summary/${meetingId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
+      // Now generate summary with retry logic
+      console.log(`🤖 Calling backend to generate summary...`);
+      let summaryRes;
+      let retryCount = 0;
+      const maxRetries = 3;
       
-      if (summaryRes.ok) {
-        const result = await summaryRes.json();
-        console.log(`✅ SUMMARY GENERATED SUCCESSFULLY!`);
-        console.log(`📝 Summary preview: ${result.summary?.summaryText?.substring(0, 200) || 'No preview available'}...`);
-        console.log(`💾 Summary saved to database with ID: ${result.summary?.id || 'Unknown'}`);
-      } else {
-        console.error(`❌ Summary generation failed with status: ${summaryRes.status}`);
-        const errorText = await summaryRes.text();
-        console.error(`❌ Error details: ${errorText}`);
+      while (retryCount < maxRetries) {
+        try {
+          summaryRes = await fetch(`http://backend:3001/debug/generate-summary/${meetingId}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+          
+          if (summaryRes.ok) {
+            const result = await summaryRes.json();
+            console.log(`✅ SUMMARY GENERATED SUCCESSFULLY!`);
+            console.log(`📝 Summary preview: ${result.summary?.summaryText?.substring(0, 200) || 'No preview available'}...`);
+            console.log(`💾 Summary saved to database with ID: ${result.summary?.id || 'Unknown'}`);
+            break; // Success, exit retry loop
+          } else {
+            console.error(`❌ Summary generation failed with status: ${summaryRes.status} (attempt ${retryCount + 1}/${maxRetries})`);
+            const errorText = await summaryRes.text();
+            console.error(`❌ Error details: ${errorText}`);
+            
+            if (retryCount < maxRetries - 1) {
+              console.log(`🔄 Retrying in 2 seconds...`);
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          }
+        } catch (fetchError) {
+          console.error(`❌ Network error during summary generation (attempt ${retryCount + 1}/${maxRetries}):`, fetchError);
+          if (retryCount < maxRetries - 1) {
+            console.log(`🔄 Retrying in 2 seconds...`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
+        
+        retryCount++;
+      }
+      
+      if (retryCount >= maxRetries) {
+        console.error(`❌ CRITICAL: Summary generation failed after ${maxRetries} attempts`);
       }
     } catch (error) {
       console.error(`❌ CRITICAL: Summary generation failed completely:`, error);
@@ -256,7 +314,7 @@ async function scrapeCaptions(
       console.warn(`⚠️ Page/browser termination detected (${reason}) – emergency flush`);
       const emergencySegments = Array.from(activeSegments.values());
       if (emergencySegments.length) {
-        await saveTranscriptBatch(meetingId, createdAt, emergencySegments, true);
+        await saveTranscriptBatch(meetingId, createdAt, emergencySegments, true, userId, meetingTitle);
         console.log(`🚨 Emergency flush completed: ${emergencySegments.length} segments saved`);
       }
     } catch (e) {
@@ -347,11 +405,38 @@ async function scrapeCaptions(
     let lastSpeaker = "Unknown Speaker";
     let mutationCount = 0;
 
-    // extract speaker
+    // extract speaker with better detection
     const getSpeaker = (node: HTMLElement): string => {
-      const badge = node.querySelector<HTMLElement>(badgeSel);
-      const speaker = badge?.textContent?.trim();
-      return speaker || lastSpeaker;
+      // Try multiple selectors for speaker badges
+      const speakerSelectors = [
+        ".NWpY1d", ".xoMHSc", 
+        "[data-speaker-name]", 
+        ".speaker-name",
+        "[aria-label*='speaking']",
+        ".caption-speaker"
+      ];
+      
+      for (const selector of speakerSelectors) {
+        const badge = node.querySelector<HTMLElement>(selector);
+        const speaker = badge?.textContent?.trim();
+        if (speaker && speaker.length > 0 && speaker !== lastSpeaker) {
+          console.log(`[DEBUG] New speaker detected: "${speaker}" (was: "${lastSpeaker}")`);
+          return speaker;
+        }
+      }
+      
+      // If no new speaker found, check if the node itself contains speaker info
+      const nodeText = node.textContent?.trim() || "";
+      const speakerMatch = nodeText.match(/^([^:]+):/);
+      if (speakerMatch) {
+        const speaker = speakerMatch[1].trim();
+        if (speaker && speaker !== lastSpeaker) {
+          console.log(`[DEBUG] Speaker from text pattern: "${speaker}"`);
+          return speaker;
+        }
+      }
+      
+      return lastSpeaker;
     };
 
     // extract caption
@@ -368,7 +453,14 @@ async function scrapeCaptions(
       const txt = getText(node);
       const spk = getSpeaker(node);
       console.log(`[DEBUG] Processing node: speaker="${spk}", text="${txt}"`);
-      if (txt && txt.toLowerCase() !== spk.toLowerCase()) {
+      
+      // Only send if we have meaningful text and it's not just the speaker name
+      if (txt && txt.length > 0 && txt.toLowerCase() !== spk.toLowerCase()) {
+        // Check if this looks like a new speaker change
+        if (spk !== lastSpeaker) {
+          console.log(`[DEBUG] Speaker changed from "${lastSpeaker}" to "${spk}"`);
+        }
+        
         console.log(`[DEBUG] Sending caption: ${spk}: ${txt}`);
         // @ts-expect-error
         window.onCaption?.(spk, txt);
@@ -440,9 +532,11 @@ async function scrapeCaptions(
     const segmentsToFlush = Array.from(activeSegments.values());
     if (segmentsToFlush.length) {
       console.log(`⏰ Timer flush: sending ${segmentsToFlush.length} segments to database...`);
-      await saveTranscriptBatch(meetingId, createdAt, segmentsToFlush);
+      await saveTranscriptBatch(meetingId, createdAt, segmentsToFlush, false, userId, meetingTitle);
     }
   }, FLUSH_EVERY_MS);
+
+  // removed inactivity watchdog per product requirement
 
   // leave call and final flush
   const leaveCall = async () => {
@@ -460,6 +554,9 @@ async function scrapeCaptions(
       meetingId,
       createdAt,
       segments.slice(flushedCount),
+      true,
+      userId,
+      meetingTitle
     )
       .then(() => {
         flushedCount = segments.length;
@@ -467,42 +564,11 @@ async function scrapeCaptions(
       .catch((err) => console.error("[FLUSH-after-leave] failed", err));
   };
 
-  // Add automatic summary generation every 5 minutes as a safety net
-  const autoSummaryInterval = setInterval(async () => {
-    console.log(`⏰ Auto-summary check: ${segments.length} segments captured so far`);
-    if (segments.length > 0) {
-      console.log(`🔄 Generating auto-summary for meeting ${meetingId}...`);
-      try {
-        await generateSummaryImmediately(meetingId, segments.length);
-        console.log(`✅ Auto-summary generated successfully`);
-      } catch (error) {
-        console.error(`❌ Auto-summary failed:`, error);
-      }
-    }
-  }, 5 * 60 * 1000); // Every 5 minutes
+  // Removed automatic summary generation - summaries only generated when meeting ends
 
-  // Add meeting activity detection - if no new captions for 2 minutes, assume meeting ended
-  let lastCaptionTime = Date.now();
-  let noActivityTimeout: NodeJS.Timeout | null = null;
-  
-  const resetActivityTimer = () => {
-    lastCaptionTime = Date.now();
-    if (noActivityTimeout) clearTimeout(noActivityTimeout);
-    noActivityTimeout = setTimeout(async () => {
-      console.log(`⏰ No activity detected for 2 minutes - assuming meeting ended`);
-      console.log(`🔄 Generating summary for meeting ${meetingId}...`);
-      try {
-        await generateSummaryImmediately(meetingId, segments.length);
-        console.log(`✅ Inactivity-based summary generated successfully`);
-        // Don't exit the loop, just generate summary
-      } catch (error) {
-        console.error(`❌ Inactivity-based summary failed:`, error);
-      }
-    }, 2 * 60 * 1000); // 2 minutes of no activity
-  };
+  // Removed inactivity-based summary generation - summaries only generated when meeting actually ends
 
-  // Start the activity timer
-  resetActivityTimer();
+  // Activity timer removed - summaries only generated when meeting ends
 
   // exit conditions (exit phrase, leave banner, hard timeout)
   try {
@@ -525,13 +591,11 @@ async function scrapeCaptions(
     // Emergency flush in case of unexpected termination
     const emergencySegments = Array.from(activeSegments.values());
     if (emergencySegments.length > 0) {
-      await saveTranscriptBatch(meetingId, createdAt, emergencySegments, true);
+      await saveTranscriptBatch(meetingId, createdAt, emergencySegments, true, userId, meetingTitle);
       console.log(`🚨 Emergency flush completed: ${emergencySegments.length} segments saved`);
     }
   } finally {
-    // Clean up timers
-    clearInterval(autoSummaryInterval);
-    if (noActivityTimeout) clearTimeout(noActivityTimeout);
+  // Clean up timers (removed unused variables)
   }
 
   // CRITICAL: Generate summary immediately when meeting ends (regardless of how it ended)
@@ -540,13 +604,14 @@ async function scrapeCaptions(
 
   // final flush and cleanup
   clearInterval(flushTimer);
+  // no inactivity timer to clear
   const finalSegments = Array.from(activeSegments.values()).filter(
     (seg) => !isNotRealCaption(seg.text) || seg.end < index - 2,
   );
 
   console.log(`🏁 Final flush: sending ${finalSegments.length} final segments to database...`);
   console.log(`📊 Total segments captured: ${segments.length}, Active segments: ${activeSegments.size}`);
-  await saveTranscriptBatch(meetingId, createdAt, finalSegments, true);
+  await saveTranscriptBatch(meetingId, createdAt, finalSegments, true, userId, meetingTitle);
   console.log(`✅ Final flush completed for meeting ${meetingId}`);
 
   // Optional: Notify backend about completion (for job tracking, but summary is already generated)
