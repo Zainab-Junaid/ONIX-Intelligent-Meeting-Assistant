@@ -6,7 +6,7 @@ A browser extension that captures real-time meeting audio and provides live tran
 
 -  **Real-time Audio Capture**: Uses Chrome's tabCapture API to capture meeting audio without turning on captions
 -  **Speaker Identification**: Identifies different speakers by their voice characteristics
--  **Live Transcription**: Real-time speech-to-text using OpenAI Whisper
+-  **Live Transcription**: Real-time speech-to-text using WebSpeech API
 -  **Clean UI**: Modern, responsive interface that displays speaker-labeled transcripts
 -  **Real-time Updates**: Live transcript updates with timestamps and confidence scores
 -  **Auto-save**: Automatic saving to Firebase Firestore
