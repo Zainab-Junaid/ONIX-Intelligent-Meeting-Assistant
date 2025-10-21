@@ -10,7 +10,7 @@ This is a **Google Meet meeting bot** that automatically joins Google Meet calls
 - **Database:** PostgreSQL 15 with Prisma ORM
 - **AI/ML:** AssemblyAI LeMUR API for summarization
 - **Containerization:** Docker + Docker Compose
-- **Frontend:** Vanilla TypeScript/HTML (simple form interface)
+- **Frontend:** React TypeScript/HTML (simple form interface)
 - **Authentication:** Google OAuth via stored session state
 
 ## 2. File and Folder Map
