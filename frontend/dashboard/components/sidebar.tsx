@@ -17,6 +17,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button" // ✅ import Button
+import { useAuth } from "@/components/auth-provider"
 
 function NavItem({
   icon: Icon,
@@ -47,6 +48,7 @@ function NavItem({
 }
 
 export function Sidebar() {
+  const { authUser, signInWithGoogle, signOutUser } = useAuth()
   return (
     <div className="flex h-dvh w-[280px] flex-col gap-3 p-4">
       {/* Logo */}
@@ -80,10 +82,12 @@ export function Sidebar() {
       {/* User Block */}
       <div className="mt-1 flex items-center justify-between gap-3 rounded-xl px-2 py-2">
         <div className="flex items-center gap-3">
-          <div className="grid size-9 place-items-center rounded-full bg-muted font-medium">?</div>
+          <div className="grid size-9 place-items-center rounded-full bg-muted font-medium">
+            {authUser?.displayName?.[0] || '?'}
+          </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium">Not signed in</p>
-            <p className="truncate text-xs text-muted-foreground">Sign in to sync</p>
+            <p className="truncate text-sm font-medium">{authUser?.displayName || 'Not signed in'}</p>
+            <p className="truncate text-xs text-muted-foreground">{authUser?.email || 'Sign in to sync'}</p>
           </div>
         </div>
         <Link
@@ -96,11 +100,13 @@ export function Sidebar() {
         </Link>
       </div>
 
-      {/* Sign In Button */}
+      {/* Auth Button */}
       <div className="px-2 mt-2">
-        <Button type="submit" className="w-full rounded-lg">
-          Sign in
-        </Button>
+        {authUser ? (
+          <Button className="w-full rounded-lg" onClick={signOutUser}>Sign out</Button>
+        ) : (
+          <Button className="w-full rounded-lg" onClick={signInWithGoogle}>Sign in</Button>
+        )}
       </div>
     </div>
   )
