@@ -1,5 +1,5 @@
 import { pushCaptionToBuffer, CaptionData } from './captionBuffer';
-import { Segment } from './models';
+import { Segment } from '../../domain/transcription/models';
 
 /**
  * Caption Service (Facade)

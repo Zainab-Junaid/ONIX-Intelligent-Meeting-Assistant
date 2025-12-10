@@ -3,5 +3,5 @@ Write-Host "Starting Flush Worker..." -ForegroundColor Green
 Write-Host "Press Ctrl+C to stop" -ForegroundColor Yellow
 Write-Host ""
 
-npx ts-node src/flushWorker.ts
+npx ts-node src/infrastructure/workers/flushWorker.ts
 

@@ -1,5 +1,5 @@
-import { getRedisClient } from './redisClient';
-import { Segment } from './models';
+import { getRedisClient } from '../../config/redis';
+import { Segment } from '../../domain/transcription/models';
 
 /**
  * Caption Buffer Producer

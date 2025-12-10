@@ -5,7 +5,7 @@ Write-Host "Starting Flush Worker in background..." -ForegroundColor Green
 # Start flush worker as a background job
 $job = Start-Job -ScriptBlock {
     Set-Location "f:\Laraib-Zafar\FYP\onix\onix new\AI-Meeting-Assistant\google-meet-meeting-bot"
-    npx ts-node src/flushWorker.ts
+    npx ts-node src/infrastructure/workers/flushWorker.ts
 }
 
 Write-Host "Flush worker started (Job ID: $($job.Id))" -ForegroundColor Yellow

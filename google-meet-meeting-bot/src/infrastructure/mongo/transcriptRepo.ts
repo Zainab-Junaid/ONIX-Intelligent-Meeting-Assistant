@@ -1,5 +1,5 @@
 import mongoose, { Schema, Model, Document } from 'mongoose';
-import { Segment } from './models';
+import { Segment } from '../../domain/transcription/models';
 
 /**
  * MongoDB Layer for Transcript Persistence

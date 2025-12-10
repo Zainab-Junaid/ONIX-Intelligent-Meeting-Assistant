@@ -1,6 +1,6 @@
-import { getRedisClient } from './redisClient';
-import { saveBatchToMongo } from './mongoLayer';
-import { CaptionData } from './captionBuffer';
+import { getRedisClient } from '../../config/redis';
+import { saveBatchToMongo } from '../mongo/transcriptRepo';
+import { CaptionData } from '../../application/transcription/captionBuffer';
 
 /**
  * Flush Worker (Consumer)
