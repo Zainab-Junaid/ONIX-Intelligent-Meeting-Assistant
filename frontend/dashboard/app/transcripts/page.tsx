@@ -6,6 +6,7 @@ import { AppShell } from "@/components/app-shell"
 import { useSearchParams } from 'next/navigation'
 import { useBotMeetings } from '@/hooks/use-bot-meetings'
 import { useExtensionMeetings } from '@/hooks/use-extension-meetings'
+import { SpeakerTranscript } from '@/components/speaker-transcript'
 
 type MeetingDoc = {
   id: string
@@ -119,29 +120,17 @@ export default function Page() {
         hour12: true
       })}`}>
         <div className="space-y-4">
-          <div className="rounded-lg border p-4">
-            <h3 className="font-medium mb-2">Transcript Segments</h3>
-            <div className="space-y-2">
-              {botMeeting.segments?.map((segment, index) => (
-                <div key={index} className="border-l-2 border-blue-200 pl-3">
-                  <div className="font-medium text-sm text-blue-600">{segment.speaker}</div>
-                  <div className="text-sm">{segment.text}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {segment.start && segment.end ? (
-                      <>
-                        {Math.floor(segment.start / 60)}:{(segment.start % 60).toString().padStart(2, '0')} - 
-                        {Math.floor(segment.end / 60)}:{(segment.end % 60).toString().padStart(2, '0')}
-                      </>
-                    ) : (
-                      'Live segment'
-                    )}
-                  </div>
+          <div className="rounded-lg border p-6 bg-white">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-lg">Meeting Transcript</h3>
+              {botMeeting.segments && botMeeting.segments.length > 0 && (
+                <div className="text-sm text-muted-foreground">
+                  {botMeeting.segments.length} {botMeeting.segments.length === 1 ? 'segment' : 'segments'} • {' '}
+                  {[...new Set(botMeeting.segments.map(s => s.speaker))].length} {[...new Set(botMeeting.segments.map(s => s.speaker))].length === 1 ? 'speaker' : 'speakers'}
                 </div>
-              ))}
-              {(!botMeeting.segments || botMeeting.segments.length === 0) && (
-                <div className="text-sm text-muted-foreground">No segments yet.</div>
               )}
             </div>
+            <SpeakerTranscript segments={botMeeting.segments || []} />
           </div>
           {botMeeting.meetingUrl && (
             <div className="text-sm text-muted-foreground">

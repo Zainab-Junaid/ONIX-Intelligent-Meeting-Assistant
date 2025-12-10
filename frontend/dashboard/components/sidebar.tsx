@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import { useState } from "react"
 import Link from "next/link"
 import {
   Archive,
@@ -14,6 +15,9 @@ import {
   FileText,
   BarChart3,
   CheckSquare,
+  Calendar,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button" // ✅ import Button
@@ -48,9 +52,10 @@ function NavItem({
 }
 
 export function Sidebar() {
-  const { authUser, signInWithGoogle, signOutUser } = useAuth()
+  const { authUser, signInWithGoogle, signOutUser, hasCalendarAccess, requestCalendarAccess } = useAuth()
+  const [isConnecting, setIsConnecting] = useState(false)
   return (
-    <div className="flex h-dvh w-[280px] flex-col gap-3 p-4">
+    <div className="flex h-screen w-[280px] flex-col gap-3 p-4 overflow-hidden">
       {/* Logo */}
       <Link href="/" prefetch className="flex items-center justify-center rounded-lg px-3 py-6">
         <img src="/images/onix.png" alt="Onix" className="h-24 w-auto max-w-full object-contain md:h-28" />
@@ -99,6 +104,47 @@ export function Sidebar() {
           ⚙
         </Link>
       </div>
+
+      {/* Calendar Connection Status */}
+      {authUser && (
+        <div className="px-2 mt-2">
+          <div className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 bg-muted/50">
+            <div className="flex items-center gap-2 min-w-0">
+              {hasCalendarAccess ? (
+                <>
+                  <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                  <span className="text-xs text-muted-foreground truncate">Calendar connected</span>
+                </>
+              ) : (
+                <>
+                  <XCircle className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <span className="text-xs text-muted-foreground truncate">Calendar not connected</span>
+                </>
+              )}
+            </div>
+            {!hasCalendarAccess && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-xs flex-shrink-0"
+                onClick={async () => {
+                  setIsConnecting(true)
+                  try {
+                    await requestCalendarAccess()
+                  } catch (error) {
+                    console.error('Failed to connect calendar:', error)
+                  } finally {
+                    setIsConnecting(false)
+                  }
+                }}
+                disabled={isConnecting}
+              >
+                {isConnecting ? '...' : <Calendar className="h-3 w-3" />}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Auth Button */}
       <div className="px-2 mt-2">

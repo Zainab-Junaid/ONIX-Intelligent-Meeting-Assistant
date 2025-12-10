@@ -19,8 +19,8 @@ const app = express();
 app.use(
   cors({
     origin: ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000"],
-    methods: ["POST", "GET", "OPTIONS"],
-    allowedHeaders: ["Content-Type"],
+    methods: ["POST", "GET", "PUT", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
 
@@ -89,6 +89,49 @@ app.post("/bot-done", async (req, res) => {
         // job saved its transcript
         await updateMeetingStatus(jobId, "transcript_saved", meetingId);
 
+        // Update Firestore meeting document with meetingId (non-blocking)
+        try {
+          const frontendUrls = [
+            process.env.FRONTEND_URL,
+            "http://localhost:3000",
+            "http://host.docker.internal:3000",
+            "http://127.0.0.1:3000"
+          ].filter(Boolean);
+          
+          let updated = false;
+          for (const frontendUrl of frontendUrls) {
+            try {
+              console.log(`📝 Attempting to update Firestore meeting ID via ${frontendUrl}`);
+              const response = await fetch(`${frontendUrl}/api/meetings/update-meeting-id`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ jobId, meetingId }),
+                signal: AbortSignal.timeout(5000), // 5 second timeout
+              });
+              
+              if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                  console.log(`✅ Successfully updated Firestore meeting ID: jobId=${jobId} -> meetingId=${meetingId}`);
+                  updated = true;
+                  break;
+                }
+              } else {
+                console.log(`⚠️ Failed to update Firestore (${response.status})`);
+              }
+            } catch (urlError: any) {
+              console.log(`⚠️ Failed to reach ${frontendUrl}:`, urlError.message);
+              continue;
+            }
+          }
+          
+          if (!updated) {
+            console.log(`⚠️ Could not update Firestore meeting ID after trying all URLs. Email sending may fail.`);
+          }
+        } catch (err) {
+          console.log(`⚠️ Error updating Firestore meeting ID:`, err);
+        }
+
         const transcript = await getTranscript(meetingId);
         if (!transcript) {
           console.warn(`Transcript not found for meeting ${meetingId}`);
@@ -105,6 +148,120 @@ app.post("/bot-done", async (req, res) => {
   } catch (err) {
     console.error(`Error processing job ${jobId}:`, err);
     res.status(500).send("Failed to finalize job");
+  }
+});
+
+// endpoint to get meeting job info by meetingId
+app.get("/meeting-job/:meetingId", async (req, res) => {
+  const meetingId = req.params.meetingId;
+  try {
+    const job = await prisma.meetingJob.findFirst({
+      where: { meetingId },
+    });
+    if (!job) {
+      return res.status(404).json({ error: "Job not found" });
+    }
+    res.json(job);
+  } catch (err) {
+    console.error(`Error fetching job for meeting ${meetingId}:`, err);
+    res.status(500).json({ error: "Failed to fetch job" });
+  }
+});
+
+// endpoint to update meeting summary
+app.put("/update-summary/:meetingId", async (req, res) => {
+  const meetingId = req.params.meetingId;
+  const { summaryText } = req.body;
+  
+  if (!summaryText) {
+    return res.status(400).json({ error: "Summary text required" });
+  }
+
+  try {
+    if (process.env.ENABLE_FIRESTORE === "1") {
+      // Update in Firestore
+      try {
+        const { getFirestoreAdmin } = await import("../firestoreAdmin");
+        const firebaseAdmin = await import("firebase-admin");
+        const db = getFirestoreAdmin();
+        const ref = db.collection("meetings").doc(meetingId);
+        
+        const doc = await ref.get();
+        if (!doc.exists) {
+          // Try to create the meeting document with summary
+          await ref.set({
+            summary: {
+              content: summaryText,
+              updatedAt: firebaseAdmin.default.firestore.Timestamp.now(),
+              edited: true,
+            },
+          }, { merge: true });
+          console.log(`✅ Created meeting document with summary in Firestore for meeting ${meetingId}`);
+          return res.json({ success: true, message: "Summary created in Firestore" });
+        }
+
+        // Update existing summary
+        await ref.update({
+          "summary.content": summaryText,
+          "summary.updatedAt": firebaseAdmin.default.firestore.Timestamp.now(),
+          "summary.edited": true,
+        });
+
+        console.log(`✅ Summary updated in Firestore for meeting ${meetingId}`);
+        return res.json({ success: true, message: "Summary updated in Firestore" });
+      } catch (fsError: any) {
+        console.error(`Error updating summary in Firestore for meeting ${meetingId}:`, fsError);
+        return res.status(500).json({ 
+          error: "Failed to update summary in Firestore", 
+          details: fsError?.message 
+        });
+      }
+    } else {
+      // Update in Prisma database
+      let existingSummary = await prisma.meetingSummary.findFirst({
+        where: { meetingId },
+      });
+
+      if (!existingSummary) {
+        // Try to create if it doesn't exist
+        try {
+          existingSummary = await prisma.meetingSummary.create({
+            data: {
+              meetingId,
+              summaryText,
+              generatedAt: new Date(),
+              model: "manual-edit",
+              isFallback: false,
+            },
+          });
+          console.log(`✅ Created summary in database for meeting ${meetingId}`);
+          return res.json({ success: true, summary: existingSummary });
+        } catch (createError: any) {
+          console.error(`Error creating summary for meeting ${meetingId}:`, createError);
+          return res.status(500).json({ 
+            error: "Failed to create summary", 
+            details: createError?.message 
+          });
+        }
+      }
+
+      // Update the summary
+      const updatedSummary = await prisma.meetingSummary.update({
+        where: { id: existingSummary.id },
+        data: {
+          summaryText,
+        },
+      });
+
+      console.log(`✅ Summary updated in database for meeting ${meetingId}`);
+      res.json({ success: true, summary: updatedSummary });
+    }
+  } catch (err: any) {
+    console.error(`Error updating summary for meeting ${meetingId}:`, err);
+    res.status(500).json({ 
+      error: "Failed to update summary", 
+      details: err?.message || String(err)
+    });
   }
 });
 
@@ -164,6 +321,42 @@ app.get("/list/meetings", async (_req, res) => {
     console.error("/list/meetings error:", e instanceof Error ? e.message : e);
     if (e instanceof Error && e.stack) console.error(e.stack);
     res.status(500).json({ error: "failed to load meetings", details: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+// Debug endpoint to view all transcripts and segments
+app.get("/debug/transcripts", async (_req, res) => {
+  try {
+    const transcripts = await prisma.meetingTranscript.findMany({
+      include: { 
+        segments: { 
+          orderBy: { start: "asc" },
+          take: 100 // Limit to first 100 segments per meeting for readability
+        } 
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10 // Limit to 10 most recent meetings
+    });
+    
+    const result = transcripts.map((t: any) => ({
+      meetingId: t.meetingId,
+      meetingTitle: t.meetingTitle,
+      createdAt: t.createdAt,
+      userId: t.userId,
+      segmentCount: t.segments.length,
+      segments: t.segments.map((s: any) => ({
+        speaker: s.speaker,
+        text: s.text.substring(0, 100) + (s.text.length > 100 ? '...' : ''),
+        start: s.start,
+        end: s.end,
+        duration: s.end - s.start
+      }))
+    }));
+    
+    res.json(result);
+  } catch (e) {
+    console.error("/debug/transcripts error:", e instanceof Error ? e.message : e);
+    res.status(500).json({ error: "failed to load transcripts", details: e instanceof Error ? e.message : String(e) });
   }
 });
 
@@ -239,6 +432,64 @@ async function processSummaryForMeeting(meetingId: string, jobId?: string) {
       }
       if (jobId) await updateMeetingStatus(jobId, "summarized", meetingId);
       console.log("💾 Summary saved");
+      
+      // Trigger email sending to participants (non-blocking)
+      try {
+        console.log(`📧 Attempting to send summary emails for meeting ${meetingId}`);
+        
+        // Try multiple URLs in order: localhost (local dev), then host.docker.internal (Docker)
+        const frontendUrls = [
+          process.env.FRONTEND_URL,
+          "http://localhost:3000",
+          "http://host.docker.internal:3000",
+          "http://127.0.0.1:3000"
+        ].filter(Boolean);
+        
+        let emailSent = false;
+        let lastError: any = null;
+        
+        for (const frontendUrl of frontendUrls) {
+          try {
+            console.log(`📧 Trying to send email via ${frontendUrl}`);
+            const emailResponse = await fetch(`${frontendUrl}/api/meetings/send-summary-internal`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ meetingId }),
+              signal: AbortSignal.timeout(10000), // 10 second timeout
+            });
+            
+            if (emailResponse.ok) {
+              const emailData = await emailResponse.json();
+              if (emailData.success) {
+                console.log(`✅ Summary emails sent: ${emailData.message}`);
+                emailSent = true;
+                break;
+              } else if (emailData.skipped) {
+                console.log(`ℹ️ Email sending skipped: ${emailData.message}`);
+                emailSent = true; // Consider skipped as handled
+                break;
+              }
+            } else {
+              const errorText = await emailResponse.text().catch(() => '');
+              console.log(`⚠️ Email sending failed (${emailResponse.status}): ${errorText.substring(0, 100)}`);
+              lastError = new Error(`HTTP ${emailResponse.status}: ${errorText.substring(0, 100)}`);
+            }
+          } catch (urlError: any) {
+            console.log(`⚠️ Failed to reach ${frontendUrl}:`, urlError.message);
+            lastError = urlError;
+            continue; // Try next URL
+          }
+        }
+        
+        if (!emailSent) {
+          console.log(`⚠️ Email sending failed after trying all URLs. Last error:`, lastError?.message || 'Unknown error');
+          console.log(`💡 Tip: Set FRONTEND_URL environment variable or ensure frontend is running on port 3000`);
+        }
+      } catch (emailError) {
+        // Don't fail the summary generation if email fails
+        console.log(`⚠️ Email sending error (non-critical):`, emailError);
+      }
+      
       return savedSummary;
     } catch (e: any) {
       lastError = e;

@@ -16,7 +16,7 @@ export function AppShell({
     <main className="min-h-dvh bg-background">
       <div className="mx-auto flex max-w-[1400px]">
         {/* Sidebar */}
-        <aside className="hidden shrink-0 border-r bg-sidebar md:block" aria-label="Primary">
+        <aside className="hidden shrink-0 border-r bg-sidebar md:block sticky top-0 h-screen" aria-label="Primary">
           <Sidebar />
         </aside>
 

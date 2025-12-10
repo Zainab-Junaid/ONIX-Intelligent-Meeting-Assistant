@@ -4,6 +4,7 @@ import { GeistMono } from 'geist/font/mono'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { AuthProvider } from '@/components/auth-provider'
+import { CalendarPermissionModal } from '@/components/calendar-permission-modal'
 
 export const metadata: Metadata = {
   title: 'Onix',
@@ -20,6 +21,7 @@ export default function RootLayout({
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
         <AuthProvider>
           {children}
+          <CalendarPermissionModal />
         </AuthProvider>
         <Analytics />
       </body>

@@ -1,12 +1,15 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { AppShell } from "@/components/app-shell"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/components/auth-provider"
 import MeetingUrlPopup from "@/components/meeting-url-popup"
 import { useBotMeetings } from "@/hooks/use-bot-meetings"
 import { useExtensionMeetings } from "@/hooks/use-extension-meetings"
+import { useCalendarEvents } from "@/hooks/use-calendar-events"
+import { Calendar, MapPin, Users, Video, ExternalLink, Clock } from "lucide-react"
+import Link from "next/link"
 
 type MeetingDoc = {
   id: string
@@ -18,7 +21,7 @@ type MeetingDoc = {
 }
 
 export default function Page() {
-  const { authUser, isLoading } = useAuth()
+  const { authUser, isLoading, hasCalendarAccess } = useAuth()
   const [showBotPopup, setShowBotPopup] = useState(false)
   
   // Bot meetings hook
@@ -26,6 +29,9 @@ export default function Page() {
   
   // Extension meetings hook
   const { meetings: extensionMeetings, loading: extensionLoading, refetch: refetchExtensionMeetings } = useExtensionMeetings()
+  
+  // Calendar events hook
+  const { events: calendarEvents, loading: calendarLoading, error: calendarError, refetch: refetchCalendar } = useCalendarEvents()
   
   // Debug logging
   console.log('Bot meetings:', botMeetings);
@@ -66,6 +72,201 @@ export default function Page() {
       }
     >
       <div className="space-y-6">
+        {/* Calendar Events */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              Scheduled Meetings
+            </h3>
+            {hasCalendarAccess && (
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => refetchCalendar()}
+                disabled={calendarLoading}
+              >
+                Refresh
+              </Button>
+            )}
+          </div>
+          
+          {!hasCalendarAccess ? (
+            <div className="rounded-lg border p-4 bg-muted/30">
+              <p className="text-sm text-muted-foreground mb-3">
+                Connect your Google Calendar to see scheduled meetings here.
+              </p>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/settings">Connect Calendar</Link>
+              </Button>
+            </div>
+          ) : calendarLoading ? (
+            <div className="text-sm text-muted-foreground">Loading calendar events...</div>
+          ) : calendarError ? (
+            <div className="rounded-lg border p-4 bg-red-50 border-red-200">
+              <p className="text-sm text-red-700">{calendarError}</p>
+              <Button 
+                asChild 
+                variant="outline" 
+                size="sm" 
+                className="mt-2"
+              >
+                <Link href="/settings">Go to Settings</Link>
+              </Button>
+            </div>
+          ) : calendarEvents.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No upcoming meetings in the next 30 days.</div>
+          ) : (
+            <div className="grid gap-3">
+              {calendarEvents.map((event) => {
+                const startDate = event.start.dateTime 
+                  ? new Date(event.start.dateTime)
+                  : event.start.date 
+                  ? new Date(event.start.date)
+                  : null
+                
+                const endDate = event.end.dateTime 
+                  ? new Date(event.end.dateTime)
+                  : event.end.date 
+                  ? new Date(event.end.date)
+                  : null
+
+                const isAllDay = !event.start.dateTime && event.start.date
+                const isPast = startDate && startDate < new Date()
+                const isToday = startDate && 
+                  startDate.toDateString() === new Date().toDateString()
+
+                // Extract Google Meet URL
+                const meetUrl =
+  event.conferenceData?.entryPoints?.find(
+    (ep) => ep.entryPointType === "video"
+  )?.uri ||
+  event.description?.match(/https?:\/\/meet\.google\.com\/[a-z-]+/i)?.[0] ||
+  event.location?.match(/https?:\/\/meet\.google\.com\/[a-z-]+/i)?.[0] ||
+  null;
+
+
+                const cardClassName = [
+                  'rounded-lg border p-4 hover:bg-muted/40 transition-colors',
+                  isPast ? 'opacity-60' : '',
+                  isToday ? 'border-blue-300 bg-blue-50/50' : ''
+                ].filter(Boolean).join(' ')
+
+                return (
+                  <div 
+                    key={event.id} 
+                    className={cardClassName}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h4 className="font-medium text-base truncate">
+                            {event.summary || 'Untitled Event'}
+                          </h4>
+                          {isToday && (
+                            <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded">
+                              Today
+                            </span>
+                          )}
+                        </div>
+                        
+                        <div className="space-y-1.5 mt-2">
+                          {startDate && (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Clock className="h-4 w-4 flex-shrink-0" />
+                              <span>
+                                {isAllDay 
+                                  ? startDate.toLocaleDateString('en-US', {
+                                      weekday: 'short',
+                                      month: 'short',
+                                      day: 'numeric',
+                                      year: startDate.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+                                    })
+                                  : startDate.toLocaleString('en-US', {
+                                      weekday: 'short',
+                                      month: 'short',
+                                      day: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      hour12: true
+                                    })
+                                }
+                                {endDate && !isAllDay && (
+                                  <> - {endDate.toLocaleTimeString('en-US', {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                      hour12: true
+                                    })}</>
+                                )}
+                              </span>
+                            </div>
+                          )}
+                          
+                          {event.location && (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <MapPin className="h-4 w-4 flex-shrink-0" />
+                              <span className="truncate">{event.location}</span>
+                            </div>
+                          )}
+                          
+                          {event.attendees && event.attendees.length > 0 && (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Users className="h-4 w-4 flex-shrink-0" />
+                              <span>
+                                {event.attendees.length} attendee{event.attendees.length !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                          )}
+                          
+                          {meetUrl && (
+                            <div className="flex items-center gap-2">
+                              <Video className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                              <a 
+                                href={meetUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-sm text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1"
+                              >
+                                Join Google Meet
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {event.htmlLink && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          asChild
+                          className="flex-shrink-0"
+                        >
+                          <a 
+                            href={event.htmlLink} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                    
+                    {event.description && (
+                      <div className="mt-3 pt-3 border-t text-sm text-muted-foreground line-clamp-2">
+                        {event.description.replace(/<[^>]*>/g, '').substring(0, 150)}
+                        {event.description.length > 150 ? '...' : ''}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
         {/* Extension Meetings */}
         <div>
           <h3 className="text-lg font-semibold mb-3">Extension Meetings</h3>

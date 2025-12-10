@@ -111,31 +111,78 @@ export async function saveTranscriptBatch(
       });
       console.log(`[FLUSH] MeetingTranscript upserted for ${meetingId}`);
       
-      // add segments individually to allow for updates
+      // add segments individually - use composite key of meetingId + speaker + start to prevent overwrites
       let savedCount = 0;
       for (const seg of batch) {
-        await prisma.segment.upsert({
-          where: {
-            meetingId_start: {
+        // Create a unique identifier for this segment to prevent overwrites
+        // Use meetingId + speaker + start as composite key
+        try {
+          // First try to find existing segment with same meetingId, speaker, and start time
+          const existing = await prisma.segment.findFirst({
+            where: {
               meetingId,
+              speaker: seg.speaker,
               start: seg.start,
             },
-          },
-          update: {
-            end: seg.end,
-            text: seg.text,
-            speaker: seg.speaker,
-          },
-          create: {
-            meetingId,
-            start: seg.start,
-            end: seg.end,
-            text: seg.text,
-            speaker: seg.speaker,
-          },
-        });
-        savedCount++;
-        console.log(`[FLUSH] ✅ Caption stored: "${seg.speaker}: ${seg.text.substring(0, 50)}${seg.text.length > 50 ? '...' : ''}"`);
+          });
+
+          if (existing) {
+            // Update existing segment if text is different or end time is later
+            if (existing.text !== seg.text || existing.end < seg.end) {
+              await prisma.segment.update({
+                where: { id: existing.id },
+                data: {
+                  end: seg.end,
+                  text: seg.text,
+                },image.png
+              });
+              console.log(`[FLUSH] ✅ Segment updated: "${seg.speaker}: ${seg.text.substring(0, 50)}${seg.text.length > 50 ? '...' : ''}"`);
+            } else {
+              console.log(`[FLUSH] ⏭️ Segment already exists with same content, skipping`);
+            }
+          } else {
+            // Create new segment
+            await prisma.segment.create({
+              data: {
+                meetingId,
+                start: seg.start,
+                end: seg.end,
+                text: seg.text,
+                speaker: seg.speaker,
+              },
+            });
+            console.log(`[FLUSH] ✅ New segment stored: "${seg.speaker}: ${seg.text.substring(0, 50)}${seg.text.length > 50 ? '...' : ''}"`);
+          }
+          savedCount++;
+        } catch (err: any) {
+          // If unique constraint violation, try to update instead
+          if (err.code === 'P2002') {
+            console.log(`[FLUSH] ⚠️ Unique constraint violation, attempting update...`);
+            try {
+              const existing = await prisma.segment.findFirst({
+                where: {
+                  meetingId,
+                  speaker: seg.speaker,
+                  start: seg.start,
+                },
+              });
+              if (existing) {
+                await prisma.segment.update({
+                  where: { id: existing.id },
+                  data: {
+                    end: seg.end,
+                    text: seg.text,
+                  },
+                });
+                savedCount++;
+              }
+            } catch (updateErr) {
+              console.error(`[FLUSH] ❌ Failed to update segment:`, updateErr);
+            }
+          } else {
+            console.error(`[FLUSH] ❌ Failed to save segment:`, err);
+          }
+        }
       }
   
       console.log(`[FLUSH] ✅ SUCCESS: ${savedCount}/${batch.length} segments saved to database for meeting ${meetingId}`);

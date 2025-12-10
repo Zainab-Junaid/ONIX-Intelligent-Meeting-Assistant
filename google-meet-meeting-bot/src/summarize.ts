@@ -99,14 +99,14 @@ ${keyTopics}
       input_text: combinedSegments,
       answer_format: "bulleted_list",
       max_output_size: 3000,
-      final_model: "anthropic/claude-3-5-sonnet",
+      final_model: "anthropic/claude-3-7-sonnet-20250219",
       context: "Generate a comprehensive meeting summary with the following structure: Key Discussion Points, Decisions Made, Action Items, and Next Steps. Focus on actionable insights and important decisions. For Action Items, include speaker assignments when possible (e.g., 'Task description (assigned to Speaker Name)').",
     });
 
     // Generate action items separately
     const actionItemsResp = await client.lemur.task({
       input_text: combinedSegments,
-      final_model: "anthropic/claude-3-5-sonnet",
+      final_model: "anthropic/claude-3-7-sonnet-20250219",
       prompt: "Extract specific action items from this meeting transcript. For each action item, identify: 1) The task description, 2) Who it's assigned to (if mentioned), 3) Any due date mentioned. Return ONLY a JSON array with objects { item, assignedTo, dueDate }.",
       context: "Action items extraction",
     });

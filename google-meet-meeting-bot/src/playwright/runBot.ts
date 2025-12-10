@@ -139,25 +139,63 @@ async function scrapeCaptions(
 ): Promise<string> {
   const userId = process.env.USER_ID;
   const meetingTitle = process.env.MEETING_TITLE;
-  // index = caption timing, flushedCount = how many segments have been saved
   // exitRequested = exit condition, segments = finalized segments, activeSegments = ongoing segment for speaker
-  let index = 0;
   let flushedCount = 0;
   let exitRequested = false;
-  const segments: Segment[] = [];
-  const activeSegments = new Map<string, Segment>();
+  const segments: Segment[] = []; // Finalized segments ready to save
+  const activeSegments = new Map<string, Segment>(); // Currently active segments per speaker
+  let lastActiveSpeaker: string | null = null; // Track speaker changes
+  const meetingStartTime = createdAt.getTime(); // Real meeting start time
+  let lastSeenText = new Map<string, string>(); // Track last seen text per speaker to extract only new content
 
-  // filter system msgs
-  const isNotRealCaption = (text: string) =>
-    /you left the meeting|return to home screen|leave call|feedback|audio and video|learn more/.test(
-      text.toLowerCase(),
-    );
+  // filter system msgs and UI elements
+  const isNotRealCaption = (text: string) => {
+    const normalized = text.toLowerCase();
+    return /you left the meeting|return to home screen|leave call|feedback|audio and video|learn more|arrow_downward|jump to bottom|jump to top|you have joined|your camera is off|your microphone is off|your hand is|there is one other person|there are \d+ other people|you were removed|you've been removed|joined|has raised a hand|reactions are not being announced|press shift\+r|keep_outline|pin.*to your main screen|mic_none|you can't remotely mute|more_vert|more options|combat\.|hello\. hello\. for\./i.test(normalized) ||
+           /^\s*(joined|has raised|reactions|press|keep_outline|pin|mic_none|more_vert|combat)\s*$/i.test(text.trim());
+  };
+
+  // Helper: Finalize a segment (mark as complete and move to finalized array)
+  const finalizeSegment = (speaker: string, finalText?: string) => {
+    const activeSeg = activeSegments.get(speaker);
+    if (activeSeg) {
+      // activeSeg.start and activeSeg.end are already in seconds (from currentTime calculation)
+      // Just use them directly, but update end time to current if needed
+      const now = Date.now();
+      const currentTimeSeconds = Math.floor((now - meetingStartTime) / 1000);
+      
+      // Update with final text if provided
+      if (finalText) {
+        activeSeg.text = finalText;
+      }
+      
+      // Finalize the segment - use existing start, update end to current time
+      const finalizedSeg: Segment = {
+        speaker: activeSeg.speaker,
+        text: activeSeg.text,
+        start: activeSeg.start, // Already in seconds
+        end: Math.max(activeSeg.end, currentTimeSeconds), // Use later of current end or now
+      };
+      
+      segments.push(finalizedSeg);
+      activeSegments.delete(speaker);
+      console.log(`✅ Finalized segment for ${speaker}: "${finalizedSeg.text.substring(0, 50)}${finalizedSeg.text.length > 50 ? '...' : ''}" (${finalizedSeg.start}s - ${finalizedSeg.end}s)`);
+      return finalizedSeg;
+    }
+    return null;
+  };
 
   // Create a closure to capture userId for the callback
   const createCaptionHandler = () => {
     return async (speaker: string, text: string) => {
       const caption = text.trim();
       if (!caption) return;
+
+      // Filter out system messages and UI elements
+      if (isNotRealCaption(caption)) {
+        console.log(`🚫 Filtered system message: "${caption.substring(0, 50)}${caption.length > 50 ? '...' : ''}"`);
+        return;
+      }
 
       console.log(`🗣️ ${speaker}: ${caption}`); // Real-time logging
 
@@ -170,37 +208,66 @@ async function scrapeCaptions(
         exitRequested = true;
       }
 
+      const now = Date.now();
+      const currentTime = Math.floor((now - meetingStartTime) / 1000); // Time in seconds since meeting start
+
+      // Check if speaker changed
+      if (lastActiveSpeaker !== null && speaker !== lastActiveSpeaker) {
+        // Finalize previous speaker's segment
+        console.log(`🔄 Speaker changed from "${lastActiveSpeaker}" to "${speaker}" - finalizing previous segment`);
+        finalizeSegment(lastActiveSpeaker);
+      }
+
       const existing = activeSegments.get(speaker);
 
       if (!existing) {
-        // first segment for speaker
-        const seg = {
+        // First segment for this speaker (or new segment after speaker change)
+        const seg: Segment = {
           speaker,
-          text: caption,
-          start: index,
-          end: index + 1,
-          meetingId,
+          text: caption, // caption is already the new text only
+          start: currentTime,
+          end: currentTime + 1, // Will be updated as caption grows
         };
         activeSegments.set(speaker, seg);
-        segments.push(seg); // Add to main segments array
-        console.log(`📝 New caption segment created for ${speaker} (index: ${index})`);
+        console.log(`📝 New caption segment created for ${speaker} at ${currentTime}s: "${caption.substring(0, 50)}${caption.length > 50 ? '...' : ''}"`);
       } else {
-        // update existing segment if caption is growing
-        if (
-          caption.startsWith(existing.text) ||
-          caption.length > existing.text.length + 5
-        ) {
-          existing.text = caption;
-          existing.end = index + 1;
-          console.log(`📝 Caption updated for ${speaker}: "${caption.substring(0, 50)}${caption.length > 50 ? '...' : ''}"`);
+        // Since we're now receiving only NEW text, we append it to the existing segment
+        // But if the new text looks like a complete new sentence (starts with capital, has punctuation before), create new segment
+        const looksLikeNewSentence = /^[A-Z]/.test(caption.trim()) && 
+                                     (existing.text.endsWith('.') || existing.text.endsWith('!') || existing.text.endsWith('?'));
+        
+        if (looksLikeNewSentence && caption.length > 10) {
+          // Finalize the existing segment and create a new one
+          console.log(`📝 New sentence detected for ${speaker} - finalizing previous segment`);
+          finalizeSegment(speaker);
+          
+          const newSeg: Segment = {
+            speaker,
+            text: caption,
+            start: currentTime,
+            end: currentTime + 1,
+          };
+          activeSegments.set(speaker, newSeg);
+          console.log(`📝 New caption segment created for ${speaker} at ${currentTime}s: "${caption.substring(0, 50)}${caption.length > 50 ? '...' : ''}"`);
+        } else {
+          // Append new text to existing segment (same sentence continuing)
+          existing.text = existing.text + (existing.text.endsWith(' ') ? '' : ' ') + caption;
+          existing.end = currentTime;
+          console.log(`📝 Caption updated for ${speaker}: "${existing.text.substring(0, 50)}${existing.text.length > 50 ? '...' : ''}"`);
         }
       }
 
-      index++;
-      // if exit = triggered, flush curr captions
+      lastActiveSpeaker = speaker;
+
+      // if exit = triggered, finalize all active segments and flush
       if (isExit) {
-        const finalSegments = Array.from(activeSegments.values());
-        await saveTranscriptBatch(meetingId, createdAt, finalSegments, true, userId, meetingTitle);
+        console.log("🚪 Exit triggered - finalizing all active segments");
+        // Finalize all remaining active segments
+        const speakersToFinalize = Array.from(activeSegments.keys());
+        for (const spk of speakersToFinalize) {
+          finalizeSegment(spk);
+        }
+        await saveTranscriptBatch(meetingId, createdAt, segments, true, userId, meetingTitle);
       }
     };
   };
@@ -252,11 +319,18 @@ async function scrapeCaptions(
     console.log(`📊 Total segments captured: ${segmentCount}`);
     
     try {
-      // First ensure all segments are saved
-      const finalSegments = Array.from(activeSegments.values());
-      if (finalSegments.length > 0) {
-        console.log(`💾 Final flush: saving ${finalSegments.length} remaining segments...`);
-        await saveTranscriptBatch(meetingId, createdAt, finalSegments, true, userId, meetingTitle);
+      // First finalize all active segments
+      const speakersToFinalize = Array.from(activeSegments.keys());
+      for (const spk of speakersToFinalize) {
+        finalizeSegment(spk);
+      }
+      
+      // Then ensure all finalized segments are saved
+      const remainingSegments = segments.slice(flushedCount);
+      if (remainingSegments.length > 0) {
+        console.log(`💾 Final flush: saving ${remainingSegments.length} remaining segments...`);
+        await saveTranscriptBatch(meetingId, createdAt, remainingSegments, true, userId, meetingTitle);
+        flushedCount = segments.length;
         console.log(`✅ Final segments saved to database`);
       }
 
@@ -312,10 +386,18 @@ async function scrapeCaptions(
   const emergencyFlushAndSummarize = async (reason: string) => {
     try {
       console.warn(`⚠️ Page/browser termination detected (${reason}) – emergency flush`);
-      const emergencySegments = Array.from(activeSegments.values());
-      if (emergencySegments.length) {
-        await saveTranscriptBatch(meetingId, createdAt, emergencySegments, true, userId, meetingTitle);
-        console.log(`🚨 Emergency flush completed: ${emergencySegments.length} segments saved`);
+      // Finalize all active segments first
+      const speakersToFinalize = Array.from(activeSegments.keys());
+      for (const spk of speakersToFinalize) {
+        finalizeSegment(spk);
+      }
+      
+      // Flush all finalized segments
+      const remainingSegments = segments.slice(flushedCount);
+      if (remainingSegments.length) {
+        await saveTranscriptBatch(meetingId, createdAt, remainingSegments, true, userId, meetingTitle);
+        flushedCount = segments.length;
+        console.log(`🚨 Emergency flush completed: ${remainingSegments.length} segments saved`);
       }
     } catch (e) {
       console.error("❌ Emergency flush failed:", e);
@@ -404,6 +486,7 @@ async function scrapeCaptions(
     const badgeSel = ".NWpY1d, .xoMHSc";
     let lastSpeaker = "Unknown Speaker";
     let mutationCount = 0;
+    const lastSeenText = new Map<string, string>(); // Track last seen text per speaker
 
     // extract speaker with better detection
     const getSpeaker = (node: HTMLElement): string => {
@@ -448,76 +531,165 @@ async function scrapeCaptions(
       return clone.textContent?.trim() ?? "";
     };
 
+    // Clean text - remove UI elements and system messages
+    const cleanText = (text: string): string => {
+      // Remove "arrow_downwardJump to bottom" and similar UI elements
+      return text
+        .replace(/arrow_downwardJump to bottom/gi, '')
+        .replace(/arrow_upwardJump to top/gi, '')
+        .replace(/Jump to (bottom|top)/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+
+    // Extract only NEW text by comparing with last seen text
+    const extractNewText = (fullText: string, speaker: string): string | null => {
+      const lastText = lastSeenText.get(speaker) || "";
+      
+      // If this is the same text, skip it
+      if (fullText === lastText) {
+        return null;
+      }
+      
+      // If the new text starts with the last text, extract only the new part
+      if (fullText.startsWith(lastText)) {
+        const newPart = fullText.substring(lastText.length).trim();
+        // Only return if there's substantial new content (more than just punctuation/spaces)
+        if (newPart.length > 2) {
+          return newPart;
+        }
+        return null;
+      }
+      
+      // If the text is completely different (new sentence/thought), return it
+      // But check if it's not just a shorter version of what we've seen
+      if (lastText.length > 0 && !lastText.includes(fullText.substring(0, Math.min(20, fullText.length)))) {
+        return fullText; // Completely new text
+      }
+      
+      // If last text is empty or this is longer, it's new
+      if (lastText.length === 0 || fullText.length > lastText.length) {
+        return fullText;
+      }
+      
+      return null;
+    };
+
     // send caption to exposed onCaption()
     const send = (node: HTMLElement): void => {
-      const txt = getText(node);
+      let txt = getText(node);
       const spk = getSpeaker(node);
-      console.log(`[DEBUG] Processing node: speaker="${spk}", text="${txt}"`);
       
-      // Only send if we have meaningful text and it's not just the speaker name
-      if (txt && txt.length > 0 && txt.toLowerCase() !== spk.toLowerCase()) {
-        // Check if this looks like a new speaker change
-        if (spk !== lastSpeaker) {
-          console.log(`[DEBUG] Speaker changed from "${lastSpeaker}" to "${spk}"`);
-        }
-        
-        console.log(`[DEBUG] Sending caption: ${spk}: ${txt}`);
-        // @ts-expect-error
-        window.onCaption?.(spk, txt);
+      // Clean the text
+      txt = cleanText(txt);
+      
+      // Skip if empty or just speaker name
+      if (!txt || txt.length === 0 || txt.toLowerCase() === spk.toLowerCase()) {
+        return;
+      }
+      
+      // Extract only NEW text
+      const newText = extractNewText(txt, spk);
+      
+      if (!newText) {
+        // No new content, skip
+        return;
+      }
+      
+      // Update last seen text
+      lastSeenText.set(spk, txt);
+      
+      console.log(`[DEBUG] Processing node: speaker="${spk}", fullText="${txt.substring(0, 100)}${txt.length > 100 ? '...' : ''}", newText="${newText}"`);
+      
+      // Check if this looks like a new speaker change
+      if (spk !== lastSpeaker) {
+        console.log(`[DEBUG] Speaker changed from "${lastSpeaker}" to "${spk}"`);
         lastSpeaker = spk;
       }
+      
+      console.log(`[DEBUG] Sending NEW caption: ${spk}: ${newText}`);
+      // @ts-expect-error
+      window.onCaption?.(spk, newText);
     };
 
     // More aggressive caption detection - check all possible caption containers
+    // But only process individual caption nodes, not the entire region
     const checkForCaptions = () => {
-      const captionSelectors = [
-        '[role="region"][aria-label*="Captions"]',
-        '[role="region"][aria-label*="captions"]',
-        '[aria-live="polite"]',
-        '[aria-live="assertive"]',
-        '.captions',
-        '.caption'
-      ];
+      // Find individual caption nodes (not the container)
+      const captionNodes = document.querySelectorAll('[role="region"][aria-label*="Captions"] > *, [role="region"][aria-label*="captions"] > *');
       
-      captionSelectors.forEach(sel => {
-        const elements = document.querySelectorAll(sel);
-        elements.forEach(el => {
-          if (el.textContent?.trim()) {
-            console.log(`[DEBUG] Found caption content in ${sel}: "${el.textContent.trim()}"`);
-            send(el as HTMLElement);
+      captionNodes.forEach((node) => {
+        if (node instanceof HTMLElement && node.textContent?.trim()) {
+          const text = node.textContent.trim();
+          // Only process if this looks like a caption node (has speaker info or is a recent addition)
+          if (text.length > 5 && !text.includes('arrow_downward') && !text.includes('Jump to')) {
+            send(node);
           }
-        });
+        }
+      });
+      
+      // Also check aria-live regions for new announcements
+      const liveRegions = document.querySelectorAll('[aria-live="polite"], [aria-live="assertive"]');
+      liveRegions.forEach((region) => {
+        if (region instanceof HTMLElement && region.textContent?.trim()) {
+          const text = region.textContent.trim();
+          // Only process if it's not a system message
+          if (text.length > 5 && 
+              !text.includes('joined') && 
+              !text.includes('raised a hand') && 
+              !text.includes('Reactions are not') &&
+              !text.includes('You have joined') &&
+              !text.includes('Your camera') &&
+              !text.includes('Your microphone')) {
+            send(region);
+          }
+        }
       });
     };
 
     // Initial check
     checkForCaptions();
 
-    // watch DOM for caption updates and run send()
-    new MutationObserver((mutations) => {
-      mutationCount++;
-      console.log(`[DEBUG] Mutation #${mutationCount}, ${mutations.length} changes`);
-      
-      for (const m of mutations) {
-        // new caption elements
-        Array.from(m.addedNodes).forEach((n) => {
-          if (n instanceof HTMLElement) {
-            console.log(`[DEBUG] Added node: ${n.tagName}, text="${n.textContent?.trim()}"`);
-            send(n);
+      // watch DOM for caption updates and run send()
+      new MutationObserver((mutations) => {
+        mutationCount++;
+        console.log(`[DEBUG] Mutation #${mutationCount}, ${mutations.length} changes`);
+        
+        for (const m of mutations) {
+          // new caption elements - only process if they look like actual captions
+          Array.from(m.addedNodes).forEach((n) => {
+            if (n instanceof HTMLElement) {
+              const text = n.textContent?.trim() || "";
+              // Only process if it's substantial text and not a system message
+              if (text.length > 5 && 
+                  !text.includes('arrow_downward') && 
+                  !text.includes('Jump to') &&
+                  !text.match(/^(joined|has raised|reactions|press|keep_outline|pin|mic_none|more_vert|combat)/i)) {
+                console.log(`[DEBUG] Added node: ${n.tagName}, text="${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+                send(n);
+              }
+            }
+          });
+          // live text edits inside an existing element - only if parent looks like a caption
+          if (
+            m.type === "characterData" &&
+            m.target?.parentElement instanceof HTMLElement
+          ) {
+            const parent = m.target.parentElement;
+            const text = parent.textContent?.trim() || "";
+            // Only process if parent is in caption region and has meaningful text
+            if (text.length > 5 && 
+                parent.closest('[role="region"][aria-label*="Captions"], [role="region"][aria-label*="captions"]')) {
+              console.log(`[DEBUG] Character data change: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+              send(parent);
+            }
           }
-        });
-        // live text edits inside an existing element
-        if (
-          m.type === "characterData" &&
-          m.target?.parentElement instanceof HTMLElement
-        ) {
-          console.log(`[DEBUG] Character data change: "${m.target.textContent}"`);
-          send(m.target.parentElement);
         }
-      }
-      
-      // Also check for captions after each mutation
-      checkForCaptions();
+        
+        // Check for new captions after mutations (but less frequently)
+        if (mutationCount % 3 === 0) {
+          checkForCaptions();
+        }
     }).observe(document.body, {
       childList: true,
       characterData: true,
@@ -527,12 +699,14 @@ async function scrapeCaptions(
     console.log("Caption observer setup complete - watching for DOM changes");
   });
 
-  // flush segments to backend every second
+  // flush finalized segments to backend periodically
   const flushTimer = setInterval(async () => {
-    const segmentsToFlush = Array.from(activeSegments.values());
-    if (segmentsToFlush.length) {
-      console.log(`⏰ Timer flush: sending ${segmentsToFlush.length} segments to database...`);
+    // Only flush finalized segments (not active ones that might still be updated)
+    const segmentsToFlush = segments.slice(flushedCount);
+    if (segmentsToFlush.length > 0) {
+      console.log(`⏰ Timer flush: sending ${segmentsToFlush.length} finalized segments to database...`);
       await saveTranscriptBatch(meetingId, createdAt, segmentsToFlush, false, userId, meetingTitle);
+      flushedCount = segments.length;
     }
   }, FLUSH_EVERY_MS);
 
@@ -540,6 +714,13 @@ async function scrapeCaptions(
 
   // leave call and final flush
   const leaveCall = async () => {
+    // Finalize all remaining active segments before leaving
+    console.log("🚪 Leaving call - finalizing all active segments");
+    const speakersToFinalize = Array.from(activeSegments.keys());
+    for (const spk of speakersToFinalize) {
+      finalizeSegment(spk);
+    }
+    
     const hangUpSel =
       'button[aria-label*="Leave call"], button[aria-label*="Leave meeting"]';
     if (await page.$(hangUpSel)) {
@@ -550,18 +731,24 @@ async function scrapeCaptions(
     await page
       .waitForSelector(LEAVE_BANNER_SEL, { timeout: 10_000 })
       .catch(() => undefined);
-    await saveTranscriptBatch(
-      meetingId,
-      createdAt,
-      segments.slice(flushedCount),
-      true,
-      userId,
-      meetingTitle
-    )
-      .then(() => {
-        flushedCount = segments.length;
-      })
-      .catch((err) => console.error("[FLUSH-after-leave] failed", err));
+    
+    // Flush all remaining finalized segments
+    const remainingSegments = segments.slice(flushedCount);
+    if (remainingSegments.length > 0) {
+      await saveTranscriptBatch(
+        meetingId,
+        createdAt,
+        remainingSegments,
+        true,
+        userId,
+        meetingTitle
+      )
+        .then(() => {
+          flushedCount = segments.length;
+          console.log(`✅ Final flush completed: ${remainingSegments.length} segments saved`);
+        })
+        .catch((err) => console.error("[FLUSH-after-leave] failed", err));
+    }
   };
 
   // Removed automatic summary generation - summaries only generated when meeting ends
@@ -605,8 +792,16 @@ async function scrapeCaptions(
   // final flush and cleanup
   clearInterval(flushTimer);
   // no inactivity timer to clear
-  const finalSegments = Array.from(activeSegments.values()).filter(
-    (seg) => !isNotRealCaption(seg.text) || seg.end < index - 2,
+  // Finalize all remaining active segments before final flush
+  const speakersToFinalize = Array.from(activeSegments.keys());
+  for (const spk of speakersToFinalize) {
+    finalizeSegment(spk);
+  }
+  
+  // Get all finalized segments that haven't been flushed yet
+  const remainingSegments = segments.slice(flushedCount);
+  const finalSegments = remainingSegments.filter(
+    (seg) => !isNotRealCaption(seg.text),
   );
 
   console.log(`🏁 Final flush: sending ${finalSegments.length} final segments to database...`);
@@ -665,21 +860,72 @@ async function loginIfNeeded(page: Page, context: BrowserContext) {
   }
 
   // fill email
-  await page.waitForSelector('input[type="email"]', { timeout: 60000 });
-  await page.fill('input[type="email"]', email);
-  await Promise.all([
-    page.click('#identifierNext'),
-    page.waitForLoadState('domcontentloaded')
-  ]);
+  console.log("📧 Filling email for loginIfNeeded...");
+  const emailInput = page.locator('input[type="email"]').first();
+  await emailInput.waitFor({ state: 'visible', timeout: 60000 });
+  await emailInput.fill(email);
+  
+  // Click next and wait for password page
+  const nextButton = page.locator('#identifierNext, button:has-text("Next")').first();
+  await nextButton.waitFor({ state: 'visible', timeout: 10000 });
+  await nextButton.click();
+  
+  // Wait for password page - try multiple strategies
+  await page.waitForTimeout(2000); // Give page time to transition
+  
+  // Try waiting for URL change
+  try {
+    await page.waitForURL(/accounts\.google\.com\/.*(challenge|signin|password)/, { timeout: 15000 });
+  } catch (e) {
+    // URL might not change, continue
+  }
 
   // fill password (handle multiple password forms)
-  const passwordInput = page.locator('input[type="password"]:not([aria-hidden="true"])');
-  await passwordInput.waitFor({ state: 'visible', timeout: 60000 });
+  console.log("🔑 Waiting for password input...");
+  let passwordInput = page.locator('input[type="password"]:not([aria-hidden="true"])').first();
+  let passwordFound = false;
+  
+  try {
+    await passwordInput.waitFor({ state: 'visible', timeout: 20000 });
+    passwordFound = true;
+  } catch (e) {
+    // Try alternative selectors
+    const alternativeSelectors = [
+      'input[type="password"]',
+      'input[name="password"]',
+      'input[aria-label*="password" i]',
+    ];
+    
+    for (const selector of alternativeSelectors) {
+      try {
+        passwordInput = page.locator(selector).first();
+        await passwordInput.waitFor({ state: 'visible', timeout: 5000 });
+        passwordFound = true;
+        break;
+      } catch (err) {
+        // Try next selector
+      }
+    }
+  }
+  
+  if (!passwordFound) {
+    throw new Error("Password input not found");
+  }
+  
   await passwordInput.fill(password);
-  await Promise.all([
-    page.click('#passwordNext'),
-    page.waitForLoadState('domcontentloaded')
-  ]);
+  
+  // Click password next
+  const passwordNextButton = page.locator('#passwordNext, button:has-text("Next")').first();
+  await passwordNextButton.waitFor({ state: 'visible', timeout: 10000 });
+  await passwordNextButton.click();
+  
+  // Wait for redirect away from login
+  try {
+    await page.waitForURL((url) => !url.hostname.includes('accounts.google.com'), { timeout: 30000 });
+  } catch (e) {
+    // Still wait a bit
+    await page.waitForTimeout(3000);
+  }
 
   // give Google time to finalize session and redirect
   await page.waitForTimeout(3000);
@@ -696,11 +942,6 @@ async function validateAndRefreshSession(page: Page, context: BrowserContext) {
   const email = process.env.GOOGLE_ACCOUNT_USER;
   const password = process.env.GOOGLE_ACCOUNT_PASSWORD;
 
-  if (!email || !password) {
-    console.warn("Missing GOOGLE_ACCOUNT_USER/PASSWORD; skipping session validation.");
-    return;
-  }
-
   console.log("Testing session validity by accessing Google Meet home...");
   
   try {
@@ -713,21 +954,51 @@ async function validateAndRefreshSession(page: Page, context: BrowserContext) {
     const hasLoginPrompt = await page.locator('input[type="email"]').first().isVisible().catch(() => false);
     
     if (isRedirectedToLogin || hasLoginPrompt) {
-      console.log("Session expired - performing fresh login...");
+      console.log("⚠️ Session appears expired or invalid");
+      
+      // Only attempt automated login if credentials are available
+      if (!email || !password) {
+        console.warn("❌ Missing GOOGLE_ACCOUNT_USER/PASSWORD - cannot perform automated login.");
+        console.warn("💡 Please run 'npm run gen:auth' to manually create a valid auth.json file.");
+        throw new Error("Session expired and automated login credentials not available. Run 'npm run gen:auth' to create auth.json.");
+      }
+      
+      console.log("🔄 Attempting automated login...");
       await performFreshLogin(page, context);
     } else {
-      console.log("Session is valid - proceeding to meeting");
+      console.log("✅ Session is valid - proceeding to meeting");
     }
     
     // Always refresh storage state after validation
     try {
       await context.storageState({ path: 'auth.json' });
-      console.log('Updated auth.json with current session');
+      console.log('✅ Updated auth.json with current session');
     } catch {}
     
-  } catch (error) {
-    console.warn("Session validation failed, performing fresh login:", error);
-    await performFreshLogin(page, context);
+  } catch (error: any) {
+    // If it's a rejection error, don't retry
+    if (error.message?.includes('rejected') || error.message?.includes('manual login')) {
+      console.error("❌ Automated login was rejected by Google.");
+      console.error("💡 SOLUTION: Run 'npm run gen:auth' to manually log in and create auth.json");
+      throw error;
+    }
+    
+    console.warn("⚠️ Session validation failed:", error.message);
+    
+    // Only retry if we have credentials
+    if (email && password) {
+      console.log("🔄 Retrying with fresh login...");
+      try {
+        await performFreshLogin(page, context);
+      } catch (retryError: any) {
+        if (retryError.message?.includes('rejected') || retryError.message?.includes('manual login')) {
+          throw retryError; // Don't wrap rejection errors
+        }
+        throw new Error(`Session validation and login retry both failed: ${retryError.message}`);
+      }
+    } else {
+      throw new Error("Session validation failed and no credentials available for automated login. Run 'npm run gen:auth' to create auth.json.");
+    }
   }
 }
 
@@ -742,41 +1013,181 @@ async function performFreshLogin(page: Page, context: BrowserContext) {
 
   console.log("Performing fresh Google login...");
   
-  // Clear any existing session
-  await context.clearCookies();
-  
-  // Go to Google sign-in
-  await page.goto("https://accounts.google.com/", { waitUntil: "domcontentloaded" });
-  
-  // Fill email
-  await page.waitForSelector('input[type="email"]', { timeout: 30000 });
-  await page.fill('input[type="email"]', email);
-  await Promise.all([
-    page.click('#identifierNext'),
-    page.waitForLoadState('domcontentloaded')
-  ]);
-  
-  // Fill password
-  const passwordInput = page.locator('input[type="password"]:not([aria-hidden="true"])');
-  await passwordInput.waitFor({ state: 'visible', timeout: 30000 });
-  await passwordInput.fill(password);
-  await Promise.all([
-    page.click('#passwordNext'),
-    page.waitForLoadState('domcontentloaded')
-  ]);
-  
-  // Wait for successful login and redirect
-  await page.waitForTimeout(5000);
-  
-  // Verify we're logged in by checking Meet home
-  await page.goto("https://meet.google.com/", { waitUntil: "domcontentloaded" });
-  
-  // Save fresh session
   try {
-    await context.storageState({ path: 'auth.json' });
-    console.log('Fresh login completed - auth.json updated');
-  } catch (error) {
-    console.error('Failed to save fresh session:', error);
+    // Clear any existing session
+    await context.clearCookies();
+    console.log("✅ Cleared cookies");
+    
+    // Go to Google sign-in
+    console.log("🌐 Navigating to Google sign-in...");
+    await page.goto("https://accounts.google.com/", { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.waitForTimeout(2000); // Give page time to fully load
+    
+    // Fill email
+    console.log("📧 Waiting for email input...");
+    const emailInput = page.locator('input[type="email"]').first();
+    await emailInput.waitFor({ state: 'visible', timeout: 60000 });
+    console.log("✅ Email input found");
+    
+    await emailInput.fill(email);
+    console.log(`✅ Filled email: ${email}`);
+    
+    // Click next and wait for navigation or password field
+    console.log("🖱️ Clicking 'Next' button...");
+    const nextButton = page.locator('#identifierNext, button:has-text("Next")').first();
+    await nextButton.waitFor({ state: 'visible', timeout: 10000 });
+    await nextButton.click();
+    
+    // Wait for password page to load - try multiple strategies
+    console.log("⏳ Waiting for password page...");
+    let passwordInput;
+    let passwordFound = false;
+    
+    // Wait a bit for page to load after clicking Next
+    await page.waitForTimeout(3000);
+    
+    // Check current URL for rejection or challenge pages
+    const urlAfterNext = page.url();
+    console.log("🔍 Current URL after Next click:", urlAfterNext);
+    
+    // Check if Google is showing a challenge/rejection page
+    if (urlAfterNext.includes('/rejected') || urlAfterNext.includes('/challenge')) {
+      console.error("❌ Google is showing a challenge/rejection page. This usually means:");
+      console.error("   1. Google detected automated login attempts");
+      console.error("   2. The account needs manual verification");
+      console.error("   3. There's a CAPTCHA or security challenge");
+      console.error("");
+      console.error("💡 SOLUTION: You need to manually log in using the generate-auth.js script:");
+      console.error("   Run: npm run gen:auth");
+      console.error("   This will open a browser where you can manually complete the login.");
+      console.error("   The session will be saved to auth.json for future use.");
+      throw new Error("Google login rejected - manual login required. Run 'npm run gen:auth' to create a valid auth.json file.");
+    }
+    
+    // Strategy 1: Wait for URL change to password/challenge page (but not rejected)
+    try {
+      await page.waitForURL(/accounts\.google\.com\/.*(challenge|signin|password)/, { timeout: 15000 });
+      // Double-check it's not a rejected page
+      if (page.url().includes('/rejected')) {
+        throw new Error("Google login was rejected");
+      }
+      console.log("✅ URL changed to password page");
+    } catch (e: any) {
+      if (e?.message?.includes('rejected')) {
+        throw e;
+      }
+      console.log("⚠️ URL didn't change as expected, continuing...");
+    }
+    
+    // Strategy 2: Wait for password input to appear
+    try {
+      passwordInput = page.locator('input[type="password"]:not([aria-hidden="true"])').first();
+      await passwordInput.waitFor({ state: 'visible', timeout: 20000 });
+      passwordFound = true;
+      console.log("✅ Password input found");
+    } catch (e) {
+      console.log("⚠️ Password input not found with first selector, trying alternatives...");
+      
+      // Check again if we're on a rejected page
+      const urlCheck = page.url();
+      if (urlCheck.includes('/rejected') || urlCheck.includes('/challenge')) {
+        throw new Error("Google login was rejected - manual login required");
+      }
+      
+      // Strategy 3: Try alternative selectors
+      const alternativeSelectors = [
+        'input[type="password"]',
+        'input[name="password"]',
+        'input[aria-label*="password" i]',
+        'input#password',
+      ];
+      
+      for (const selector of alternativeSelectors) {
+        try {
+          passwordInput = page.locator(selector).first();
+          await passwordInput.waitFor({ state: 'visible', timeout: 5000 });
+          passwordFound = true;
+          console.log(`✅ Password input found with selector: ${selector}`);
+          break;
+        } catch (err) {
+          // Try next selector
+        }
+      }
+    }
+    
+    if (!passwordFound || !passwordInput) {
+      // Final check for rejected page
+      const finalUrl = page.url();
+      if (finalUrl.includes('/rejected') || finalUrl.includes('/challenge')) {
+        console.error("❌ Google is blocking automated login. Manual login required.");
+        console.error("💡 Run 'npm run gen:auth' to create a valid auth.json file.");
+        throw new Error("Google login rejected - manual login required. Run 'npm run gen:auth' to create a valid auth.json file.");
+      }
+      
+      // Take screenshot for debugging
+      const screenshot = await page.screenshot({ path: '/tmp/login-debug.png' }).catch(() => null);
+      console.error("❌ Password input not found. Current URL:", page.url());
+      console.error("❌ Page title:", await page.title().catch(() => 'Unknown'));
+      throw new Error("Password input field not found after email submission. Google may have changed their login flow or there's a challenge page.");
+    }
+    
+    // Fill password
+    console.log("🔑 Filling password...");
+    await passwordInput.fill(password);
+    console.log("✅ Password filled");
+    
+    // Click password next button
+    console.log("🖱️ Clicking password 'Next' button...");
+    const passwordNextButton = page.locator('#passwordNext, button:has-text("Next")').first();
+    await passwordNextButton.waitFor({ state: 'visible', timeout: 10000 });
+    await passwordNextButton.click();
+    
+    // Wait for successful login - look for redirect away from accounts.google.com
+    console.log("⏳ Waiting for login to complete...");
+    try {
+      await page.waitForURL((url) => !url.hostname.includes('accounts.google.com'), { timeout: 30000 });
+      console.log("✅ Redirected away from login page");
+    } catch (e) {
+      console.log("⚠️ Still on accounts.google.com, waiting a bit longer...");
+      await page.waitForTimeout(5000);
+    }
+    
+    // Additional wait for session to be established
+    await page.waitForTimeout(3000);
+    
+    // Verify we're logged in by checking Meet home
+    console.log("🌐 Verifying login by accessing Meet home...");
+    await page.goto("https://meet.google.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
+    
+    // Check if we're still on login page
+    const finalUrl = page.url();
+    if (finalUrl.includes('accounts.google.com')) {
+      throw new Error("Still on login page after password submission. Login may have failed or there's a challenge.");
+    }
+    
+    console.log("✅ Successfully logged in");
+    
+    // Save fresh session
+    try {
+      await context.storageState({ path: 'auth.json' });
+      console.log('✅ Fresh login completed - auth.json updated');
+    } catch (error) {
+      console.error('❌ Failed to save fresh session:', error);
+      throw error;
+    }
+  } catch (error: any) {
+    console.error("❌ Login failed:", error.message);
+    console.error("❌ Error details:", error);
+    
+    // Take screenshot for debugging
+    try {
+      await page.screenshot({ path: '/tmp/login-error.png' });
+      console.log("📸 Screenshot saved to /tmp/login-error.png");
+    } catch (e) {
+      // Ignore screenshot errors
+    }
+    
+    throw new Error(`Login failed: ${error.message}`);
   }
 }
 

@@ -19,6 +19,9 @@ services:
     container_name: meetingbot-backend
     ports:
       - "3001:3001"
+      # Expose Prisma Studio port so you can access it from the host when running inside the backend container.
+      # Container listens on 5555; host maps 5556 -> 5555 to avoid conflicts if 5555 is already in use on Windows.
+      - "5556:5555"
     env_file:
       - .env
     environment:
