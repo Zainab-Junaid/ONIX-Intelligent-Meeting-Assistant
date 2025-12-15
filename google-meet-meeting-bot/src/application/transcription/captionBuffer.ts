@@ -41,6 +41,13 @@ export interface CaptionData {
   meetingTitle?: string;
 }
 
+export interface RawCaptionData {
+  meetingId: string;
+  text: string;
+  speaker?: string;
+  timestamp: number;
+}
+
 /**
  * Push a caption to the Redis buffer for a meeting.
  * 
@@ -96,6 +103,30 @@ export async function pushCaptionToBuffer(
       error
     );
     throw error; // Re-throw to allow caller to handle
+  }
+}
+
+/**
+ * Push a raw caption event to the raw buffer for a meeting.
+ * Stored separately for debugging/training.
+ */
+export async function pushRawCaptionToBuffer(
+  meetingId: string,
+  raw: RawCaptionData
+): Promise<void> {
+  const redis = getRedisClient();
+  const rawKey = `meeting:${meetingId}:raw_buffer`;
+
+  try {
+    const pipeline = redis.pipeline();
+    pipeline.rpush(rawKey, JSON.stringify(raw));
+    await pipeline.exec();
+  } catch (error) {
+    console.error(
+      `[Buffer] ❌ Failed to push raw caption to buffer for meeting ${meetingId}:`,
+      error
+    );
+    throw error;
   }
 }
 

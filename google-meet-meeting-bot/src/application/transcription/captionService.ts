@@ -1,4 +1,9 @@
-import { pushCaptionToBuffer, CaptionData } from './captionBuffer';
+import {
+  pushCaptionToBuffer,
+  pushRawCaptionToBuffer,
+  CaptionData,
+  RawCaptionData,
+} from './captionBuffer';
 import { Segment } from '../../domain/transcription/models';
 
 /**
@@ -34,7 +39,7 @@ import { Segment } from '../../domain/transcription/models';
  * 
  * @throws Error if Redis write fails
  */
-export async function pushCaption(
+export async function pushFinalCaption(
   meetingId: string,
   segment: Segment,
   userId?: string,
@@ -52,34 +57,18 @@ export async function pushCaption(
 }
 
 /**
- * Push multiple captions in a batch.
- * 
- * Useful when receiving multiple segments at once (e.g., from a batch API).
- * Each caption is still pushed individually to maintain order and atomicity.
- * 
- * @param meetingId - Unique identifier for the meeting
- * @param segments - Array of transcript segments
- * @param userId - Optional user ID associated with the meeting
- * @param meetingTitle - Optional meeting title
+ * Push a raw caption event to the raw buffer.
  */
-export async function pushCaptionsBatch(
+export async function pushRawCaption(
   meetingId: string,
-  segments: Segment[],
-  userId?: string,
-  meetingTitle?: string
+  payload: RawCaptionData
 ): Promise<void> {
-  // Push all segments in parallel for better performance
-  // Each push is atomic, so order is maintained by Redis List
-  const promises = segments.map((segment) =>
-    pushCaption(meetingId, segment, userId, meetingTitle)
-  );
-
-  await Promise.all(promises);
+  await pushRawCaptionToBuffer(meetingId, payload);
 }
 
 // Export default for convenience
 export default {
-  pushCaption,
-  pushCaptionsBatch,
+  pushFinalCaption,
+  pushRawCaption,
 };
 

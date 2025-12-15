@@ -1,7 +1,9 @@
 import { BrowserContext, Page, chromium } from "playwright";
-import { saveTranscriptBatch, testDatabaseConnection } from "../storage";
+import { pushFinalCaption, pushRawCaption } from "../application/transcription/captionService";
 import { v4 as uuidv4 } from "uuid";
-import { Segment } from "../models";
+import { Segment } from "../domain/transcription/models";
+import fs from "fs";
+import path from "path";
 
 // bot will leave the meeting immediately if it hears any of the following phrases
 const EXIT_PHRASES = [
@@ -10,9 +12,6 @@ const EXIT_PHRASES = [
   "no taker please leave",
   "notetaker please leave",
 ].map((p) => p.toLowerCase());
-
-// flush interval to save captions
-const FLUSH_EVERY_MS = 1_000;
 
 // selector used to detect the meeting has ended or bot was removed
 const LEAVE_BANNER_SEL =
@@ -27,21 +26,22 @@ export async function runBot(url: string): Promise<string> {
   const meetingId = uuidv4();
   const createdAt = new Date();
 
-  // Test database connection first
-  console.log("🔍 Testing database connection...");
-  const dbConnected = await testDatabaseConnection();
-  if (!dbConnected) {
-    throw new Error("Database connection failed - cannot proceed");
-  }
-
   // Get userId and meetingTitle from environment (passed from backend)
   const userId = process.env.USER_ID;
   const meetingTitle = process.env.MEETING_TITLE;
   
-  // ensures meeting always exists
-  console.log(`🚀 Creating initial meeting transcript for ${meetingId}`);
-  await saveTranscriptBatch(meetingId, createdAt, [], true, userId, meetingTitle);
-  console.log(`✅ Initial meeting transcript created for ${meetingId}`);
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:23',message:'runBot entry',data:{meetingId,url,userId,meetingTitle,hasGoogleUser:!!process.env.GOOGLE_ACCOUNT_USER,hasGooglePassword:!!process.env.GOOGLE_ACCOUNT_PASSWORD},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+  
+  console.log(`🚀 Starting meeting capture for ${meetingId}`);
+
+  // #region agent log
+  const authJsonPath = path.resolve(process.cwd(), "auth.json");
+  const authJsonExists = fs.existsSync(authJsonPath);
+  const authJsonSize = authJsonExists ? fs.statSync(authJsonPath).size : 0;
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:35',message:'auth.json check',data:{authJsonPath,authJsonExists,authJsonSize,cwd:process.cwd()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
 
   const browser = await chromium.launch({
     headless: true,
@@ -54,10 +54,18 @@ export async function runBot(url: string): Promise<string> {
     ],
   });
 
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:48',message:'before newContext',data:{storageStatePath:'auth.json'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+
   const context: BrowserContext = await browser.newContext({
     storageState: "auth.json",
   });
   const page = await context.newPage();
+
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:52',message:'context created',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
 
   // for debugging so that you see all console lines in terminal
   page.on("console", (msg) => console.log(`[page:${msg.type()}]`, msg.text()));
@@ -82,9 +90,21 @@ export async function runBot(url: string): Promise<string> {
 
     // ALWAYS validate and refresh session before attempting to join meeting
     console.log("Validating session before joining meeting...");
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:72',message:'before validateAndRefreshSession',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     await validateAndRefreshSession(page, context);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:75',message:'after validateAndRefreshSession',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
 
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:77',message:'before goto meeting url',data:{url},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
     await page.goto(url, { waitUntil: "domcontentloaded" });
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:80',message:'after goto meeting url',data:{finalUrl:page.url()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
 
     // if we saw repeated 401s, refresh session and reload meet URL once
     if (authErrorCount >= 2) {
@@ -106,10 +126,22 @@ export async function runBot(url: string): Promise<string> {
     );
 
     // join/ask to join, handle 2-step join preview, close modals, wait until in meeting
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:99',message:'before clickJoin',data:{currentUrl:page.url()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     await clickJoin(page);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:102',message:'after clickJoin',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     await collapsePreviewIfNeeded(page);
     await dismissOverlays(page);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:105',message:'before waitUntilJoined',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+    // #endregion
     await waitUntilJoined(page);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:108',message:'after waitUntilJoined',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+    // #endregion
     console.log("joined meeting");
 
     // turn captions on
@@ -126,8 +158,14 @@ export async function runBot(url: string): Promise<string> {
     } catch {}
 
     await context.tracing.stop({ path: "run.zip" });
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:118',message:'runBot success',data:{meetingId:mid},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     return mid;
   } catch (err) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:121',message:'runBot error',data:{error:err instanceof Error ? err.message : String(err),stack:err instanceof Error ? err.stack : undefined},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     throw new Error(`Run Bot error: ${err}`);
   }
 }
@@ -139,14 +177,25 @@ async function scrapeCaptions(
 ): Promise<string> {
   const userId = process.env.USER_ID;
   const meetingTitle = process.env.MEETING_TITLE;
-  // exitRequested = exit condition, segments = finalized segments, activeSegments = ongoing segment for speaker
-  let flushedCount = 0;
+  // exitRequested = exit condition
   let exitRequested = false;
-  const segments: Segment[] = []; // Finalized segments ready to save
-  const activeSegments = new Map<string, Segment>(); // Currently active segments per speaker
-  let lastActiveSpeaker: string | null = null; // Track speaker changes
   const meetingStartTime = createdAt.getTime(); // Real meeting start time
-  let lastSeenText = new Map<string, string>(); // Track last seen text per speaker to extract only new content
+
+  type CurrentSegment = {
+    segmentId: string;
+    speaker: string;
+    text: string;
+    startMs: number;
+    lastUpdateMs: number;
+  };
+
+  let currentSegment: CurrentSegment | null = null;
+  let finalizedSegmentCount = 0; // Counter for summary generation (no longer storing full array in memory)
+  const SILENCE_MS = 1500;
+  let silenceInterval: NodeJS.Timeout | null = null;
+  
+  // STATEFUL SEGMENT TRACKING: Persistent segmentId that only changes on speaker change or finalization
+  let currentSegmentId: string | null = null;
 
   // filter system msgs and UI elements
   const isNotRealCaption = (text: string) => {
@@ -155,37 +204,60 @@ async function scrapeCaptions(
            /^\s*(joined|has raised|reactions|press|keep_outline|pin|mic_none|more_vert|combat)\s*$/i.test(text.trim());
   };
 
-  // Helper: Finalize a segment (mark as complete and move to finalized array)
-  const finalizeSegment = (speaker: string, finalText?: string) => {
-    const activeSeg = activeSegments.get(speaker);
-    if (activeSeg) {
-      // activeSeg.start and activeSeg.end are already in seconds (from currentTime calculation)
-      // Just use them directly, but update end time to current if needed
-      const now = Date.now();
-      const currentTimeSeconds = Math.floor((now - meetingStartTime) / 1000);
-      
-      // Update with final text if provided
-      if (finalText) {
-        activeSeg.text = finalText;
-      }
-      
-      // Finalize the segment - use existing start, update end to current time
-      const finalizedSeg: Segment = {
-        speaker: activeSeg.speaker,
-        text: activeSeg.text,
-        start: activeSeg.start, // Already in seconds
-        end: Math.max(activeSeg.end, currentTimeSeconds), // Use later of current end or now
-      };
-      
-      segments.push(finalizedSeg);
-      activeSegments.delete(speaker);
-      console.log(`✅ Finalized segment for ${speaker}: "${finalizedSeg.text.substring(0, 50)}${finalizedSeg.text.length > 50 ? '...' : ''}" (${finalizedSeg.start}s - ${finalizedSeg.end}s)`);
-      return finalizedSeg;
+  // Helper: finalize the current stabilized segment and push to Redis clean buffer
+  const finalizeCurrentSegment = async () => {
+    if (!currentSegment) return;
+    const now = Date.now();
+    const startSec = Math.max(0, Math.floor((currentSegment.startMs - meetingStartTime) / 1000));
+    const endSec = Math.max(startSec, Math.floor((currentSegment.lastUpdateMs - meetingStartTime) / 1000));
+    const segment: Segment = {
+      segmentId: currentSegment.segmentId,
+      speaker: currentSegment.speaker,
+      text: currentSegment.text.trim(),
+      start: startSec,
+      end: endSec,
+    };
+    try {
+      await pushFinalCaption(meetingId, segment, userId || undefined, meetingTitle || undefined);
+      finalizedSegmentCount++;
+      console.log(`✅ Finalized segment [${segment.segmentId}] ${segment.speaker}: "${segment.text.substring(0, 50)}${segment.text.length > 50 ? '...' : ''}" (${segment.start}s-${segment.end}s)`);
+    } catch (err) {
+      console.error('❌ Failed to push final caption to buffer', err);
+    } finally {
+      // Reset segment state after finalization - new segmentId will be generated on next caption
+      currentSegment = null;
+      currentSegmentId = null;
+      lastSeenTextForSegment = ""; // Reset last seen text for next segment
     }
-    return null;
+  };
+
+  // Silence watchdog to auto-finalize if no updates
+  const startSilenceWatchdog = () => {
+    if (silenceInterval) clearInterval(silenceInterval);
+    silenceInterval = setInterval(() => {
+      if (!currentSegment) return;
+      const idle = Date.now() - currentSegment.lastUpdateMs;
+      if (idle > SILENCE_MS) {
+        console.log(`🤫 Silence detected (> ${SILENCE_MS}ms). Finalizing segment.`);
+        void finalizeCurrentSegment();
+      }
+    }, 500);
+  };
+
+  // Track last seen text per segment to extract only NEW text (prevent accumulating duplicates)
+  let lastSeenTextForSegment: string = "";
+
+  // Helper: Calculate text similarity (simple word overlap)
+  const calculateTextSimilarity = (text1: string, text2: string): number => {
+    const words1 = new Set(text1.split(/\s+/).filter(w => w.length > 2));
+    const words2 = new Set(text2.split(/\s+/).filter(w => w.length > 2));
+    const intersection = new Set([...words1].filter(w => words2.has(w)));
+    const union = new Set([...words1, ...words2]);
+    return union.size > 0 ? intersection.size / union.size : 0;
   };
 
   // Create a closure to capture userId for the callback
+  // STATEFUL SEGMENT TRACKING: currentSegmentId persists across DOM mutations
   const createCaptionHandler = () => {
     return async (speaker: string, text: string) => {
       const caption = text.trim();
@@ -197,9 +269,19 @@ async function scrapeCaptions(
         return;
       }
 
-      console.log(`🗣️ ${speaker}: ${caption}`); // Real-time logging
+      const now = Date.now();
 
-      // Activity tracking removed - summaries only generated when meeting ends
+      // Push raw flicker stream for debugging/training
+      try {
+        await pushRawCaption(meetingId, {
+          meetingId,
+          text: caption,
+          speaker,
+          timestamp: now,
+        });
+      } catch (err) {
+        console.error('❌ Failed to push raw caption to buffer', err);
+      }
 
       const normalized = caption.toLowerCase();
       const isExit = EXIT_PHRASES.some((p) => normalized.includes(p));
@@ -208,66 +290,93 @@ async function scrapeCaptions(
         exitRequested = true;
       }
 
-      const now = Date.now();
-      const currentTime = Math.floor((now - meetingStartTime) / 1000); // Time in seconds since meeting start
-
-      // Check if speaker changed
-      if (lastActiveSpeaker !== null && speaker !== lastActiveSpeaker) {
-        // Finalize previous speaker's segment
-        console.log(`🔄 Speaker changed from "${lastActiveSpeaker}" to "${speaker}" - finalizing previous segment`);
-        finalizeSegment(lastActiveSpeaker);
+      // CRITICAL: Speaker change → finalize previous segment and generate new segmentId
+      if (currentSegment && currentSegment.speaker !== speaker) {
+        console.log(`🔄 Speaker changed from "${currentSegment.speaker}" to "${speaker}" - finalizing previous segment`);
+        await finalizeCurrentSegment();
+        // After finalization, currentSegmentId is reset to null, will be generated below
+        lastSeenTextForSegment = ""; // Reset last seen text for new speaker
       }
 
-      const existing = activeSegments.get(speaker);
+      // STATEFUL ID PERSISTENCE: Only generate new segmentId if we don't have one
+      // This ensures the same ID is used across all DOM mutations for the same segment
+      if (!currentSegmentId) {
+        currentSegmentId = uuidv4();
+        console.log(`🆕 Generated new persistent segmentId: ${currentSegmentId} for speaker "${speaker}"`);
+        lastSeenTextForSegment = ""; // Reset when starting new segment
+      }
 
-      if (!existing) {
-        // First segment for this speaker (or new segment after speaker change)
-        const seg: Segment = {
+      // CRITICAL: Extract only NEW text to prevent accumulating duplicates
+      // The DOM may send full accumulated text, but we only want the new part
+      let textToAdd = caption;
+      if (lastSeenTextForSegment && caption.startsWith(lastSeenTextForSegment)) {
+        // Extract only the new part
+        textToAdd = caption.substring(lastSeenTextForSegment.length).trim();
+        if (textToAdd.length === 0) {
+          // No new content, skip this update
+          return;
+        }
+        console.log(`✂️ Extracted new text: "${textToAdd}" (full text was: "${caption.substring(0, 100)}${caption.length > 100 ? '...' : ''}")`);
+      } else if (lastSeenTextForSegment && lastSeenTextForSegment.includes(caption)) {
+        // The new text is a substring of what we've already seen (backtrack), skip
+        console.log(`⏭️ Skipping backtrack: new text "${caption}" is already in last seen "${lastSeenTextForSegment.substring(0, 100)}"`);
+        return;
+      }
+
+      // Start or update stabilization buffer with persistent segmentId
+      if (!currentSegment) {
+        // New segment - use the persistent segmentId and the extracted text
+        currentSegment = {
+          segmentId: currentSegmentId, // Use persistent ID, not generate new one
           speaker,
-          text: caption, // caption is already the new text only
-          start: currentTime,
-          end: currentTime + 1, // Will be updated as caption grows
+          text: textToAdd, // Use only the new text, not full accumulated
+          startMs: now,
+          lastUpdateMs: now,
         };
-        activeSegments.set(speaker, seg);
-        console.log(`📝 New caption segment created for ${speaker} at ${currentTime}s: "${caption.substring(0, 50)}${caption.length > 50 ? '...' : ''}"`);
+        lastSeenTextForSegment = caption; // Track full accumulated text for next comparison
+        console.log(`📝 New stabilized segment [${currentSegmentId}] for ${speaker}: "${textToAdd.substring(0, 80)}${textToAdd.length > 80 ? '...' : ''}"`);
       } else {
-        // Since we're now receiving only NEW text, we append it to the existing segment
-        // But if the new text looks like a complete new sentence (starts with capital, has punctuation before), create new segment
-        const looksLikeNewSentence = /^[A-Z]/.test(caption.trim()) && 
-                                     (existing.text.endsWith('.') || existing.text.endsWith('!') || existing.text.endsWith('?'));
-        
-        if (looksLikeNewSentence && caption.length > 10) {
-          // Finalize the existing segment and create a new one
-          console.log(`📝 New sentence detected for ${speaker} - finalizing previous segment`);
-          finalizeSegment(speaker);
-          
-          const newSeg: Segment = {
-            speaker,
-            text: caption,
-            start: currentTime,
-            end: currentTime + 1,
-          };
-          activeSegments.set(speaker, newSeg);
-          console.log(`📝 New caption segment created for ${speaker} at ${currentTime}s: "${caption.substring(0, 50)}${caption.length > 50 ? '...' : ''}"`);
+        // Update existing segment
+        // CRITICAL: Keep the same segmentId for upsert operations
+        if (textToAdd === caption && currentSegment.text !== caption) {
+          // This is a correction/replacement, not an append
+          currentSegment.text = textToAdd;
+          console.log(`🔄 Corrected segment [${currentSegmentId}] text: "${textToAdd.substring(0, 80)}${textToAdd.length > 80 ? '...' : ''}"`);
         } else {
-          // Append new text to existing segment (same sentence continuing)
-          existing.text = existing.text + (existing.text.endsWith(' ') ? '' : ' ') + caption;
-          existing.end = currentTime;
-          console.log(`📝 Caption updated for ${speaker}: "${existing.text.substring(0, 50)}${existing.text.length > 50 ? '...' : ''}"`);
+          // Append only the new text part
+          currentSegment.text = (currentSegment.text + " " + textToAdd).trim();
+          console.log(`🔄 Updated segment [${currentSegmentId}] - added: "${textToAdd}" | full text: "${currentSegment.text.substring(0, 80)}${currentSegment.text.length > 80 ? '...' : ''}"`);
         }
+        currentSegment.lastUpdateMs = now;
+        lastSeenTextForSegment = caption; // Track full accumulated text for next comparison
       }
 
-      lastActiveSpeaker = speaker;
+      // Auto-finalization triggers (silence > 1.5s or punctuation . ? !)
+      // BUT: Only finalize if we have substantial content to avoid premature finalization
+      const endsWithPunct = /[.!?]\s*$/.test(caption);
+      const idleMs = Date.now() - (currentSegment?.lastUpdateMs || now);
+      const hasSubstantialContent = currentSegment && currentSegment.text.trim().length > 10;
 
-      // if exit = triggered, finalize all active segments and flush
+      // Only finalize on punctuation if we have substantial content
+      if (endsWithPunct && hasSubstantialContent) {
+        console.log('✒️ Punctuation detected with substantial content, finalizing segment.');
+        await finalizeCurrentSegment();
+        // After finalization, currentSegmentId is reset, will generate new one on next caption
+      } else if (currentSegment && idleMs > SILENCE_MS && hasSubstantialContent) {
+        // Only finalize on silence if we have substantial content
+        console.log(`🤫 Silence detected (> ${SILENCE_MS}ms) with substantial content. Finalizing segment.`);
+        await finalizeCurrentSegment();
+        // After finalization, currentSegmentId is reset, will generate new one on next caption
+      } else if (endsWithPunct && !hasSubstantialContent) {
+        // Punctuation but not enough content - don't finalize yet, wait for more
+        console.log('⏳ Punctuation detected but content too short, waiting for more...');
+      }
+
+      startSilenceWatchdog();
+
       if (isExit) {
-        console.log("🚪 Exit triggered - finalizing all active segments");
-        // Finalize all remaining active segments
-        const speakersToFinalize = Array.from(activeSegments.keys());
-        for (const spk of speakersToFinalize) {
-          finalizeSegment(spk);
-        }
-        await saveTranscriptBatch(meetingId, createdAt, segments, true, userId, meetingTitle);
+        // Finalize anything left and stop
+        await finalizeCurrentSegment();
       }
     };
   };
@@ -319,21 +428,13 @@ async function scrapeCaptions(
     console.log(`📊 Total segments captured: ${segmentCount}`);
     
     try {
-      // First finalize all active segments
-      const speakersToFinalize = Array.from(activeSegments.keys());
-      for (const spk of speakersToFinalize) {
-        finalizeSegment(spk);
-      }
-      
-      // Then ensure all finalized segments are saved
-      const remainingSegments = segments.slice(flushedCount);
-      if (remainingSegments.length > 0) {
-        console.log(`💾 Final flush: saving ${remainingSegments.length} remaining segments...`);
-        await saveTranscriptBatch(meetingId, createdAt, remainingSegments, true, userId, meetingTitle);
-        flushedCount = segments.length;
-        console.log(`✅ Final segments saved to database`);
-      }
+      // Finalize any remaining active segment before generating summary
+      await finalizeCurrentSegment();
 
+      // Note: All segments are already in Redis buffer and will be flushed by worker
+      // The summarizer should read from MongoDB (which the worker populates)
+      // We just need to ensure the worker has time to flush, or the summarizer reads from Redis
+      
       // Now generate summary with retry logic
       console.log(`🤖 Calling backend to generate summary...`);
       let summaryRes;
@@ -385,25 +486,15 @@ async function scrapeCaptions(
   // Ensure we emergency‑flush and trigger summary if page/browser is closed (e.g., bot removed)
   const emergencyFlushAndSummarize = async (reason: string) => {
     try {
-      console.warn(`⚠️ Page/browser termination detected (${reason}) – emergency flush`);
-      // Finalize all active segments first
-      const speakersToFinalize = Array.from(activeSegments.keys());
-      for (const spk of speakersToFinalize) {
-        finalizeSegment(spk);
-      }
-      
-      // Flush all finalized segments
-      const remainingSegments = segments.slice(flushedCount);
-      if (remainingSegments.length) {
-        await saveTranscriptBatch(meetingId, createdAt, remainingSegments, true, userId, meetingTitle);
-        flushedCount = segments.length;
-        console.log(`🚨 Emergency flush completed: ${remainingSegments.length} segments saved`);
-      }
+      console.warn(`⚠️ Page/browser termination detected (${reason}) – finalizing remaining segment`);
+      // Finalize any remaining active segment (pushes to Redis buffer)
+      await finalizeCurrentSegment();
+      console.log(`✅ Emergency finalization completed - segment pushed to Redis buffer`);
     } catch (e) {
-      console.error("❌ Emergency flush failed:", e);
+      console.error("❌ Emergency finalization failed:", e);
     } finally {
       // Use the more detailed summary generation function
-      await generateSummaryImmediately(meetingId, segments.length);
+      await generateSummaryImmediately(meetingId, finalizedSegmentCount);
     }
   };
 
@@ -699,27 +790,14 @@ async function scrapeCaptions(
     console.log("Caption observer setup complete - watching for DOM changes");
   });
 
-  // flush finalized segments to backend periodically
-  const flushTimer = setInterval(async () => {
-    // Only flush finalized segments (not active ones that might still be updated)
-    const segmentsToFlush = segments.slice(flushedCount);
-    if (segmentsToFlush.length > 0) {
-      console.log(`⏰ Timer flush: sending ${segmentsToFlush.length} finalized segments to database...`);
-      await saveTranscriptBatch(meetingId, createdAt, segmentsToFlush, false, userId, meetingTitle);
-      flushedCount = segments.length;
-    }
-  }, FLUSH_EVERY_MS);
+  // Note: No periodic flush timer needed - Redis buffer is flushed by worker based on size/time thresholds
+  // All finalized segments are pushed immediately to Redis via pushFinalCaption()
 
-  // removed inactivity watchdog per product requirement
-
-  // leave call and final flush
+  // leave call and finalize remaining segment
   const leaveCall = async () => {
-    // Finalize all remaining active segments before leaving
-    console.log("🚪 Leaving call - finalizing all active segments");
-    const speakersToFinalize = Array.from(activeSegments.keys());
-    for (const spk of speakersToFinalize) {
-      finalizeSegment(spk);
-    }
+    // Finalize any remaining active segment before leaving (pushes to Redis buffer)
+    console.log("🚪 Leaving call - finalizing remaining segment");
+    await finalizeCurrentSegment();
     
     const hangUpSel =
       'button[aria-label*="Leave call"], button[aria-label*="Leave meeting"]';
@@ -732,23 +810,7 @@ async function scrapeCaptions(
       .waitForSelector(LEAVE_BANNER_SEL, { timeout: 10_000 })
       .catch(() => undefined);
     
-    // Flush all remaining finalized segments
-    const remainingSegments = segments.slice(flushedCount);
-    if (remainingSegments.length > 0) {
-      await saveTranscriptBatch(
-        meetingId,
-        createdAt,
-        remainingSegments,
-        true,
-        userId,
-        meetingTitle
-      )
-        .then(() => {
-          flushedCount = segments.length;
-          console.log(`✅ Final flush completed: ${remainingSegments.length} segments saved`);
-        })
-        .catch((err) => console.error("[FLUSH-after-leave] failed", err));
-    }
+    console.log(`✅ Leave call completed - all segments pushed to Redis buffer`);
   };
 
   // Removed automatic summary generation - summaries only generated when meeting ends
@@ -774,40 +836,27 @@ async function scrapeCaptions(
     ]);
   } catch (error) {
     console.warn("⚠️ Meeting ended unexpectedly:", error instanceof Error ? error.message : String(error));
-    console.log("🔄 Attempting emergency flush of any remaining captions...");
-    // Emergency flush in case of unexpected termination
-    const emergencySegments = Array.from(activeSegments.values());
-    if (emergencySegments.length > 0) {
-      await saveTranscriptBatch(meetingId, createdAt, emergencySegments, true, userId, meetingTitle);
-      console.log(`🚨 Emergency flush completed: ${emergencySegments.length} segments saved`);
-    }
+    console.log("🔄 Attempting emergency finalization of any remaining segment...");
+    // Emergency finalization in case of unexpected termination (pushes to Redis buffer)
+    await finalizeCurrentSegment();
+    console.log(`✅ Emergency finalization completed - segment pushed to Redis buffer`);
   } finally {
-  // Clean up timers (removed unused variables)
+    // Clean up silence watchdog timer
+    if (silenceInterval) {
+      clearInterval(silenceInterval);
+      silenceInterval = null;
+    }
   }
 
   // CRITICAL: Generate summary immediately when meeting ends (regardless of how it ended)
+  // Note: Summarizer should read from MongoDB (populated by flush worker) or Redis buffer
   console.log(`🎯 MEETING ENDED - Generating summary immediately for meeting ${meetingId}`);
-  await generateSummaryImmediately(meetingId, segments.length);
+  await generateSummaryImmediately(meetingId, finalizedSegmentCount);
 
-  // final flush and cleanup
-  clearInterval(flushTimer);
-  // no inactivity timer to clear
-  // Finalize all remaining active segments before final flush
-  const speakersToFinalize = Array.from(activeSegments.keys());
-  for (const spk of speakersToFinalize) {
-    finalizeSegment(spk);
-  }
-  
-  // Get all finalized segments that haven't been flushed yet
-  const remainingSegments = segments.slice(flushedCount);
-  const finalSegments = remainingSegments.filter(
-    (seg) => !isNotRealCaption(seg.text),
-  );
-
-  console.log(`🏁 Final flush: sending ${finalSegments.length} final segments to database...`);
-  console.log(`📊 Total segments captured: ${segments.length}, Active segments: ${activeSegments.size}`);
-  await saveTranscriptBatch(meetingId, createdAt, finalSegments, true, userId, meetingTitle);
-  console.log(`✅ Final flush completed for meeting ${meetingId}`);
+  // Final cleanup: ensure any remaining segment is finalized
+  await finalizeCurrentSegment();
+  console.log(`✅ All segments finalized and pushed to Redis buffer for meeting ${meetingId}`);
+  console.log(`📊 Total segments captured: ${finalizedSegmentCount}`);
 
   // Optional: Notify backend about completion (for job tracking, but summary is already generated)
   try {
@@ -828,7 +877,7 @@ async function scrapeCaptions(
   } catch (err) {
     console.log(`ℹ️ [bot-done] Backend notification failed - but summary already generated:`, err);
   }
-  console.log(`🎉 Meeting ${meetingId}: ${segments.length} segments captured and stored`);
+  console.log(`🎉 Meeting ${meetingId}: ${finalizedSegmentCount} segments captured and pushed to Redis buffer`);
   return meetingId;
 }
 
@@ -942,16 +991,27 @@ async function validateAndRefreshSession(page: Page, context: BrowserContext) {
   const email = process.env.GOOGLE_ACCOUNT_USER;
   const password = process.env.GOOGLE_ACCOUNT_PASSWORD;
 
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:942',message:'validateAndRefreshSession entry',data:{hasEmail:!!email,hasPassword:!!password},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
+
   console.log("Testing session validity by accessing Google Meet home...");
   
   try {
     // Test session by going to Meet home page
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:950',message:'before goto meet.google.com',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     await page.goto("https://meet.google.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
     
     // Check if we're redirected to login or see login prompts
     const currentUrl = page.url();
     const isRedirectedToLogin = /accounts\.google\.com/.test(currentUrl);
     const hasLoginPrompt = await page.locator('input[type="email"]').first().isVisible().catch(() => false);
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:957',message:'session check result',data:{currentUrl,isRedirectedToLogin,hasLoginPrompt},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     
     if (isRedirectedToLogin || hasLoginPrompt) {
       console.log("⚠️ Session appears expired or invalid");
@@ -960,13 +1020,25 @@ async function validateAndRefreshSession(page: Page, context: BrowserContext) {
       if (!email || !password) {
         console.warn("❌ Missing GOOGLE_ACCOUNT_USER/PASSWORD - cannot perform automated login.");
         console.warn("💡 Please run 'npm run gen:auth' to manually create a valid auth.json file.");
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:965',message:'missing credentials error',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         throw new Error("Session expired and automated login credentials not available. Run 'npm run gen:auth' to create auth.json.");
       }
       
       console.log("🔄 Attempting automated login...");
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:970',message:'before performFreshLogin',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       await performFreshLogin(page, context);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:973',message:'after performFreshLogin',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
     } else {
       console.log("✅ Session is valid - proceeding to meeting");
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:976',message:'session valid',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
     }
     
     // Always refresh storage state after validation
@@ -1007,6 +1079,10 @@ async function performFreshLogin(page: Page, context: BrowserContext) {
   const email = process.env.GOOGLE_ACCOUNT_USER;
   const password = process.env.GOOGLE_ACCOUNT_PASSWORD;
 
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1007',message:'performFreshLogin entry',data:{hasEmail:!!email,hasPassword:!!password},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
+
   if (!email || !password) {
     throw new Error("Missing GOOGLE_ACCOUNT_USER/PASSWORD for fresh login");
   }
@@ -1020,6 +1096,9 @@ async function performFreshLogin(page: Page, context: BrowserContext) {
     
     // Go to Google sign-in
     console.log("🌐 Navigating to Google sign-in...");
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1024',message:'before goto accounts.google.com',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     await page.goto("https://accounts.google.com/", { waitUntil: "domcontentloaded", timeout: 60000 });
     await page.waitForTimeout(2000); // Give page time to fully load
     
@@ -1049,6 +1128,10 @@ async function performFreshLogin(page: Page, context: BrowserContext) {
     // Check current URL for rejection or challenge pages
     const urlAfterNext = page.url();
     console.log("🔍 Current URL after Next click:", urlAfterNext);
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1052',message:'after email next click',data:{urlAfterNext,hasRejected:urlAfterNext.includes('/rejected'),hasChallenge:urlAfterNext.includes('/challenge')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     
     // Check if Google is showing a challenge/rejection page
     if (urlAfterNext.includes('/rejected') || urlAfterNext.includes('/challenge')) {
@@ -1144,11 +1227,20 @@ async function performFreshLogin(page: Page, context: BrowserContext) {
     
     // Wait for successful login - look for redirect away from accounts.google.com
     console.log("⏳ Waiting for login to complete...");
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1219',message:'before wait for redirect',data:{currentUrl:page.url()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     try {
       await page.waitForURL((url) => !url.hostname.includes('accounts.google.com'), { timeout: 30000 });
       console.log("✅ Redirected away from login page");
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1224',message:'redirected away from login',data:{currentUrl:page.url()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
     } catch (e) {
       console.log("⚠️ Still on accounts.google.com, waiting a bit longer...");
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1227',message:'still on accounts.google.com',data:{currentUrl:page.url()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       await page.waitForTimeout(5000);
     }
     
@@ -1157,10 +1249,16 @@ async function performFreshLogin(page: Page, context: BrowserContext) {
     
     // Verify we're logged in by checking Meet home
     console.log("🌐 Verifying login by accessing Meet home...");
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1239',message:'before verify login goto meet',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     await page.goto("https://meet.google.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
     
     // Check if we're still on login page
     const finalUrl = page.url();
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1244',message:'login verification result',data:{finalUrl,stillOnLogin:finalUrl.includes('accounts.google.com')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     if (finalUrl.includes('accounts.google.com')) {
       throw new Error("Still on login page after password submission. Login may have failed or there's a challenge.");
     }
@@ -1171,8 +1269,14 @@ async function performFreshLogin(page: Page, context: BrowserContext) {
     try {
       await context.storageState({ path: 'auth.json' });
       console.log('✅ Fresh login completed - auth.json updated');
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1253',message:'auth.json saved',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
     } catch (error) {
       console.error('❌ Failed to save fresh session:', error);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1257',message:'auth.json save failed',data:{error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       throw error;
     }
   } catch (error: any) {
@@ -1205,8 +1309,15 @@ async function clickIfVisible(page: Page, selector: string, timeout = 5000) {
 
 // join mtg by clicking "Join" button/fallbacks
 async function clickJoin(page: Page): Promise<void> {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1208',message:'clickJoin entry',data:{currentUrl:page.url()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+  // #endregion
   const allButtons = await page.locator("button").allTextContents();
   console.log("Visible buttons on screen:", allButtons);
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1211',message:'visible buttons',data:{buttonCount:allButtons.length,buttons:allButtons.slice(0,10)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+  // #endregion
 
   const continueBtn = page.locator(
     'button:has-text("Continue without microphone and camera")',
@@ -1305,6 +1416,9 @@ async function clickJoin(page: Page): Promise<void> {
 
 // waits until bot is in the call/added to the call
 async function waitUntilJoined(page: Page, timeoutMs = 60_000) {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1418',message:'waitUntilJoined entry',data:{timeoutMs,currentUrl:page.url()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+  // #endregion
   const inCall = await Promise.race([
     page.waitForSelector('button[aria-label*="Leave call"]', {
       timeout: timeoutMs,
@@ -1314,6 +1428,10 @@ async function waitUntilJoined(page: Page, timeoutMs = 60_000) {
       timeout: timeoutMs,
     }),
   ]).catch(() => false);
+
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1429',message:'waitUntilJoined result',data:{inCall:!!inCall,currentUrl:page.url()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+  // #endregion
 
   if (!inCall) throw new Error("Not admitted within time limit");
 }

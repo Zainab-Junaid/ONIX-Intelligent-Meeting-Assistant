@@ -16,26 +16,17 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/meetin
  * 
  * Stores individual caption segments with speaker, text, and timing information.
  */
-interface TranscriptSegmentDocument extends Document {
-  meetingId: string;
-  start: number;
-  end: number;
-  text: string;
-  speaker: string;
-  createdAt: Date;
-}
-
-const TranscriptSegmentSchema = new Schema<TranscriptSegmentDocument>({
-  meetingId: { type: String, required: true, index: true },
-  start: { type: Number, required: true },
-  end: { type: Number, required: true },
-  text: { type: String, required: true },
-  speaker: { type: String, required: true },
-  createdAt: { type: Date, default: Date.now },
-});
-
-// Compound index to prevent duplicates (same meeting, speaker, start time)
-TranscriptSegmentSchema.index({ meetingId: 1, speaker: 1, start: 1 }, { unique: true });
+const SegmentSchema = new Schema<Segment>(
+  {
+    segmentId: { type: String, required: true },
+    meetingId: { type: String, required: true },
+    start: { type: Number, required: true },
+    end: { type: Number, required: true },
+    text: { type: String, required: true },
+    speaker: { type: String, required: true },
+  },
+  { _id: false }
+);
 
 /**
  * Meeting Transcript Metadata Schema
@@ -48,19 +39,38 @@ interface MeetingTranscriptDocument extends Document {
   meetingTitle?: string;
   createdAt: Date;
   updatedAt: Date;
+  segments: Segment[];
 }
 
 const MeetingTranscriptSchema = new Schema<MeetingTranscriptDocument>({
   meetingId: { type: String, required: true, unique: true, index: true },
   userId: { type: String, index: true },
   meetingTitle: { type: String },
+  segments: { type: [SegmentSchema], default: [] },
   createdAt: { type: Date, required: true, default: Date.now },
   updatedAt: { type: Date, required: true, default: Date.now },
 });
 
+// Raw caption collection
+interface RawCaptionDocument extends Document {
+  meetingId: string;
+  text: string;
+  speaker?: string;
+  timestamp: number;
+  createdAt: Date;
+}
+
+const RawCaptionSchema = new Schema<RawCaptionDocument>({
+  meetingId: { type: String, required: true, index: true },
+  text: { type: String, required: true },
+  speaker: { type: String },
+  timestamp: { type: Number, required: true },
+  createdAt: { type: Date, default: Date.now },
+});
+
 // Models
-let TranscriptSegmentModel: Model<TranscriptSegmentDocument>;
 let MeetingTranscriptModel: Model<MeetingTranscriptDocument>;
+let RawCaptionModel: Model<RawCaptionDocument>;
 
 /**
  * Initialize MongoDB connection.
@@ -81,13 +91,13 @@ export async function initMongoConnection(): Promise<void> {
     console.log('[MongoDB] ✅ Connected to MongoDB');
 
     // Initialize models
-    TranscriptSegmentModel = mongoose.model<TranscriptSegmentDocument>(
-      'TranscriptSegment',
-      TranscriptSegmentSchema
-    );
     MeetingTranscriptModel = mongoose.model<MeetingTranscriptDocument>(
       'MeetingTranscript',
       MeetingTranscriptSchema
+    );
+    RawCaptionModel = mongoose.model<RawCaptionDocument>(
+      'RawCaption',
+      RawCaptionSchema
     );
   } catch (error) {
     console.error('[MongoDB] ❌ Connection failed:', error);
@@ -102,15 +112,16 @@ export async function initMongoConnection(): Promise<void> {
 const MONGO_BATCH_CHUNK_SIZE = parseInt(process.env.MONGO_BATCH_CHUNK_SIZE || '500', 10);
 
 /**
- * Save a batch of segments to MongoDB with chunking.
+ * Save a batch of clean segments to MongoDB with chunking and idempotent upserts.
  * 
  * CRITICAL: Implements batch chunking to prevent MongoDB BSON size errors.
+ * CRITICAL: Idempotent upsert per segmentId to avoid duplicates when refined.
  * 
  * This function:
  * 1. Upserts the meeting transcript metadata
  * 2. Splits segments into chunks of 500 items (configurable)
  * 3. Processes chunks in parallel using Promise.all
- * 4. Bulk inserts/updates segments (handles duplicates gracefully)
+ * 4. Bulk upserts segments by segmentId (update if exists, push if missing)
  * 
  * @param meetingId - Unique identifier for the meeting
  * @param segments - Array of segments to save
@@ -127,7 +138,7 @@ export async function saveBatchToMongo(
   meetingTitle?: string,
   createdAt?: Date
 ): Promise<number> {
-  if (!TranscriptSegmentModel || !MeetingTranscriptModel) {
+  if (!MeetingTranscriptModel) {
     throw new Error('MongoDB not initialized. Call initMongoConnection() first.');
   }
 
@@ -162,38 +173,84 @@ export async function saveBatchToMongo(
 
     // 3. Process chunks in parallel using Promise.all
     const chunkPromises = chunks.map(async (chunk, chunkIndex) => {
-      const bulkOps = chunk.map((segment) => ({
+      const bulkOps: any[] = [];
+
+      // Ensure meeting doc exists / is updated
+      bulkOps.push({
         updateOne: {
-          filter: {
-            meetingId,
-            speaker: segment.speaker,
-            start: segment.start,
-          },
+          filter: { meetingId },
           update: {
-            $set: {
+            $setOnInsert: {
               meetingId,
-              start: segment.start,
-              end: segment.end,
-              text: segment.text,
-              speaker: segment.speaker,
               createdAt: createdAt || new Date(),
             },
+            $set: {
+              userId,
+              meetingTitle,
+              updatedAt: new Date(),
+            },
           },
-          upsert: true, // Insert if doesn't exist, update if it does
+          upsert: true,
         },
-      }));
-
-      const result = await TranscriptSegmentModel.bulkWrite(bulkOps, {
-        ordered: false, // Continue on errors (e.g., duplicate key)
       });
 
-      const savedCount = result.upsertedCount + result.modifiedCount;
+      for (const segment of chunk) {
+        const payload = {
+          segmentId: segment.segmentId,
+          meetingId,
+          start: segment.start,
+          end: segment.end,
+          text: segment.text,
+          speaker: segment.speaker,
+        };
+
+        // 1) Update existing segment by segmentId (no upsert here)
+        bulkOps.push({
+          updateOne: {
+            filter: { meetingId, 'segments.segmentId': segment.segmentId },
+            update: {
+              $set: {
+                'segments.$': payload,
+                meetingTitle,
+                userId,
+                updatedAt: new Date(),
+              },
+            },
+            upsert: false,
+          },
+        });
+
+        // 2) If not present, push as new segment (with upsert for doc creation)
+        bulkOps.push({
+          updateOne: {
+            filter: { meetingId, 'segments.segmentId': { $ne: segment.segmentId } },
+            update: {
+              $setOnInsert: {
+                meetingId,
+                createdAt: createdAt || new Date(),
+              },
+              $set: {
+                meetingTitle,
+                userId,
+                updatedAt: new Date(),
+              },
+              $push: { segments: payload },
+            },
+            upsert: true,
+          },
+        });
+      }
+
+      const result = await MeetingTranscriptModel.bulkWrite(bulkOps, {
+        ordered: false, // Continue on errors (e.g., duplicate)
+      });
+
+      const savedCount = (result.upsertedCount || 0) + (result.modifiedCount || 0);
       console.log(
-        `[MongoDB] ✅ Chunk ${chunkIndex + 1}/${chunks.length}: Saved ${savedCount}/${chunk.length} segments ` +
-        `(inserted: ${result.upsertedCount}, updated: ${result.modifiedCount})`
+        `[MongoDB] ✅ Chunk ${chunkIndex + 1}/${chunks.length}: Applied ${bulkOps.length} ops; segments=${chunk.length}; saved/updated=${savedCount}`
       );
 
-      return savedCount;
+      return chunk.length;
     });
 
     // Wait for all chunks to complete
@@ -208,6 +265,34 @@ export async function saveBatchToMongo(
     return totalSaved;
   } catch (error) {
     console.error(`[MongoDB] ❌ Failed to save batch for meeting ${meetingId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Save raw caption events for debugging/training.
+ */
+export async function saveRawBatch(
+  meetingId: string,
+  rawItems: { text: string; speaker?: string; timestamp: number }[]
+): Promise<number> {
+  if (!RawCaptionModel) {
+    throw new Error('MongoDB not initialized. Call initMongoConnection() first.');
+  }
+  if (rawItems.length === 0) return 0;
+
+  try {
+    const docs = rawItems.map((r) => ({
+      meetingId,
+      text: r.text,
+      speaker: r.speaker,
+      timestamp: r.timestamp,
+    }));
+    const result = await RawCaptionModel.insertMany(docs, { ordered: false });
+    console.log(`[MongoDB] ✅ Saved ${result.length} raw captions for meeting ${meetingId}`);
+    return result.length;
+  } catch (error) {
+    console.error(`[MongoDB] ❌ Failed to save raw captions for meeting ${meetingId}:`, error);
     throw error;
   }
 }

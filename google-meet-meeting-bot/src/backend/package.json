@@ -9,12 +9,14 @@
     "postinstall": "prisma generate --schema=../backend/schema.prisma || true"
   },
   "dependencies": {
+    "@types/socket.io": "^3.0.1",
     "assemblyai": "^4.16.1",
     "cors": "^2.8.5",
     "dockerode": "^4.0.6",
     "dotenv": "^16.5.0",
     "express": "^4.18.2",
-    "meetingbotpoc": "file:../.."
+    "meetingbotpoc": "file:../..",
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

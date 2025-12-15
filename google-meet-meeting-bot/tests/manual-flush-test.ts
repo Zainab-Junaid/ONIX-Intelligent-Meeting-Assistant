@@ -3,9 +3,9 @@
  * This bypasses the worker to test if flushing logic works
  */
 
-import { getRedisClient } from './config/redis';
-import { initMongoConnection } from './infrastructure/mongo/transcriptRepo';
-import { pushCaptionsBatch } from './application/transcription/captionService';
+import { getRedisClient } from '../src/config/redis';
+import { initMongoConnection } from '../src/infrastructure/mongo/transcriptRepo';
+import { pushCaptionsBatch } from '../src/application/transcription/captionService';
 // Manual flush test - we'll implement the flush logic directly
 
 // Import the internal function - we need to make it exportable

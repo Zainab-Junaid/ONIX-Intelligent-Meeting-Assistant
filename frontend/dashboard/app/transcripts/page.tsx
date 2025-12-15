@@ -1,12 +1,13 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useAuth } from '@/components/auth-provider'
 import { AppShell } from "@/components/app-shell"
 import { useSearchParams } from 'next/navigation'
 import { useBotMeetings } from '@/hooks/use-bot-meetings'
 import { useExtensionMeetings } from '@/hooks/use-extension-meetings'
 import { SpeakerTranscript } from '@/components/speaker-transcript'
+import { io, Socket } from 'socket.io-client'
 
 type MeetingDoc = {
   id: string
@@ -37,26 +38,159 @@ export default function Page() {
   console.log('Transcripts - Bot meetings:', botMeetings);
   console.log('Transcripts - Extension meetings:', extensionMeetings);
 
+  // Socket.IO connection for real-time transcript updates
+  const socketRef = useRef<Socket | null>(null)
+
+  // Real-time segments for bot meeting view (must be at top level, before any returns)
+  const [liveSegments, setLiveSegments] = useState<Array<{ speaker: string; text: string; start?: number; end?: number }>>([])
+  const botMeetingSocketRef = useRef<Socket | null>(null)
+
   // Stream segments and load summary/action items for a specific meeting
   useEffect(() => {
     if (!meetingId) return
-    // For a specific meeting, load segments and summary via backend endpoints
-    fetch('/api/meeting-bot/meetings')
-      .then(r => r.json())
-      .then((rows: any[]) => {
-        const mtg = rows.find(r => r.meetingId === meetingId)
+
+    // Initial load from API
+    const loadInitialData = async () => {
+      try {
+        const meetingsRes = await fetch('/api/meeting-bot/meetings')
+        const meetings: any[] = await meetingsRes.json()
+        const mtg = meetings.find(r => r.meetingId === meetingId)
         if (mtg) {
           setSegments(Array.isArray(mtg.segments) ? mtg.segments : [])
         }
-      }).catch(() => setSegments([]))
 
-    fetch('/api/meeting-bot/summaries')
-      .then(r => r.json())
-      .then((rows: any[]) => {
-        const s = rows.find(r => r.meetingId === meetingId)
+        const summariesRes = await fetch('/api/meeting-bot/summaries')
+        const summaries: any[] = await summariesRes.json()
+        const s = summaries.find(r => r.meetingId === meetingId)
         setSummaryText(s?.summaryText || '')
-      }).catch(() => setSummaryText(''))
+      } catch (err) {
+        console.error('Failed to load initial data:', err)
+        setSegments([])
+        setSummaryText('')
+      }
+    }
+
+    loadInitialData()
+
+    // Connect to Socket.IO for real-time updates
+    const socket = io(process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001', {
+      transports: ['websocket', 'polling'],
+    })
+
+    socketRef.current = socket
+
+    socket.on('connect', () => {
+      console.log('✅ Connected to Socket.IO server')
+      // Join the meeting room to receive updates
+      socket.emit('join_meeting', meetingId)
+    })
+
+    socket.on('joined_meeting', (data) => {
+      console.log('✅ Joined meeting room:', data.meetingId)
+    })
+
+    // Listen for real-time transcript updates
+    socket.on('transcript_update', (data: { meetingId: string; segments: any[]; timestamp: string }) => {
+      if (data.meetingId === meetingId) {
+        console.log('📝 Received real-time transcript update:', data.segments.length, 'segments')
+        // Update segments with new data (merge with existing to avoid duplicates)
+        setSegments(prevSegments => {
+          const segmentMap = new Map<string, any>()
+          
+          // Add existing segments to map
+          prevSegments.forEach(seg => {
+            const key = seg.start !== undefined ? `${seg.start}-${seg.speaker}` : seg.text.substring(0, 50)
+            segmentMap.set(key, seg)
+          })
+          
+          // Add/update with new segments
+          data.segments.forEach(seg => {
+            const key = seg.start !== undefined ? `${seg.start}-${seg.speaker}` : seg.text.substring(0, 50)
+            // Only update if it's a new segment or the text has changed
+            if (!segmentMap.has(key) || segmentMap.get(key).text !== seg.text) {
+              segmentMap.set(key, seg)
+            }
+          })
+          
+          return Array.from(segmentMap.values()).sort((a, b) => {
+            if (a.start !== undefined && b.start !== undefined) return a.start - b.start
+            return 0
+          })
+        })
+      }
+    })
+
+    socket.on('disconnect', () => {
+      console.log('❌ Disconnected from Socket.IO server')
+    })
+
+    socket.on('connect_error', (error) => {
+      console.error('❌ Socket.IO connection error:', error)
+    })
+
+    // Cleanup on unmount
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.emit('leave_meeting', meetingId)
+        socketRef.current.disconnect()
+        socketRef.current = null
+      }
+    }
   }, [meetingId])
+
+  // Set up real-time updates for bot meeting (useEffect must be at top level, BEFORE any returns)
+  useEffect(() => {
+    if (!botId) return
+    const botMeeting = botMeetings.find(m => m.meetingId === botId)
+    if (!botMeeting) return
+
+    // Initialize with existing segments
+    setLiveSegments(botMeeting.segments || [])
+
+    // Connect to Socket.IO for real-time updates
+    const socket = io(process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001', {
+      transports: ['websocket', 'polling'],
+    })
+
+    botMeetingSocketRef.current = socket
+
+    socket.on('connect', () => {
+      console.log('✅ Connected to Socket.IO for bot meeting')
+      socket.emit('join_meeting', botId)
+    })
+
+    socket.on('transcript_update', (data: { meetingId: string; segments: any[]; timestamp: string }) => {
+      if (data.meetingId === botId) {
+        console.log('📝 Real-time update for bot meeting:', data.segments.length, 'segments')
+        // Merge segments, avoiding duplicates
+        setLiveSegments(prev => {
+          const segmentMap = new Map<string, any>()
+          prev.forEach(seg => {
+            const key = seg.start !== undefined ? `${seg.start}-${seg.speaker}-${seg.text.substring(0, 30)}` : seg.text.substring(0, 50)
+            segmentMap.set(key, seg)
+          })
+          data.segments.forEach(seg => {
+            const key = seg.start !== undefined ? `${seg.start}-${seg.speaker}-${seg.text.substring(0, 30)}` : seg.text.substring(0, 50)
+            if (!segmentMap.has(key) || segmentMap.get(key).text !== seg.text) {
+              segmentMap.set(key, seg)
+            }
+          })
+          return Array.from(segmentMap.values()).sort((a, b) => {
+            if (a.start !== undefined && b.start !== undefined) return a.start - b.start
+            return 0
+          })
+        })
+      }
+    })
+
+    return () => {
+      if (botMeetingSocketRef.current) {
+        botMeetingSocketRef.current.emit('leave_meeting', botId)
+        botMeetingSocketRef.current.disconnect()
+        botMeetingSocketRef.current = null
+      }
+    }
+  }, [botId, botMeetings])
 
   if (isLoading) return <div className="p-6">Loading…</div>
   if (!authUser) return <div className="p-6">Please sign in to view your transcripts.</div>
@@ -109,6 +243,9 @@ export default function Page() {
     const botMeeting = botMeetings.find(m => m.meetingId === botId)
     if (!botMeeting) return <div className="p-6">Bot meeting not found.</div>
     
+    // Use live segments if available, otherwise fall back to botMeeting segments
+    const displaySegments = liveSegments.length > 0 ? liveSegments : (botMeeting.segments || [])
+    
     return (
       <AppShell title={`${botMeeting.title || `Bot Meeting ${botId.substring(0, 8)}...`}`} subtitle={`Created ${new Date((botMeeting as any).createdAtMs ?? botMeeting.createdAt).toLocaleString('en-US', {
         timeZone: 'Asia/Karachi',
@@ -122,15 +259,15 @@ export default function Page() {
         <div className="space-y-4">
           <div className="rounded-lg border p-6 bg-white">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-lg">Meeting Transcript</h3>
-              {botMeeting.segments && botMeeting.segments.length > 0 && (
+              <h3 className="font-semibold text-lg">Meeting Transcript {liveSegments.length > 0 && <span className="text-sm font-normal text-green-600">● Live</span>}</h3>
+              {displaySegments.length > 0 && (
                 <div className="text-sm text-muted-foreground">
-                  {botMeeting.segments.length} {botMeeting.segments.length === 1 ? 'segment' : 'segments'} • {' '}
-                  {[...new Set(botMeeting.segments.map(s => s.speaker))].length} {[...new Set(botMeeting.segments.map(s => s.speaker))].length === 1 ? 'speaker' : 'speakers'}
+                  {displaySegments.length} {displaySegments.length === 1 ? 'segment' : 'segments'} • {' '}
+                  {[...new Set(displaySegments.map(s => s.speaker))].length} {[...new Set(displaySegments.map(s => s.speaker))].length === 1 ? 'speaker' : 'speakers'}
                 </div>
               )}
             </div>
-            <SpeakerTranscript segments={botMeeting.segments || []} />
+            <SpeakerTranscript segments={displaySegments} />
           </div>
           {botMeeting.meetingUrl && (
             <div className="text-sm text-muted-foreground">

@@ -7,6 +7,7 @@ export type MeetingTranscript = {
 };
 
 export type Segment = {
+  segmentId: string;
   start: number;
   end: number;
   text: string;

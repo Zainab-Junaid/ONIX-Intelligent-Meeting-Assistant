@@ -1,4 +1,4 @@
-import { MeetingSummaryInput, MeetingTranscript, ActionItemInput } from "./models";
+import { MeetingSummaryInput, MeetingTranscript, ActionItemInput } from "./domain/transcription/models";
 import { AssemblyAI } from "assemblyai";
 import dotenv from "dotenv";
 

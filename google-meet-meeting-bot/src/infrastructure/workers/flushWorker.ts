@@ -1,5 +1,5 @@
 import { getRedisClient } from '../../config/redis';
-import { saveBatchToMongo } from '../mongo/transcriptRepo';
+import { saveBatchToMongo, saveRawBatch } from '../mongo/transcriptRepo';
 import { CaptionData } from '../../application/transcription/captionBuffer';
 
 /**
@@ -21,6 +21,7 @@ import { CaptionData } from '../../application/transcription/captionBuffer';
 const BUFFER_SIZE_THRESHOLD = parseInt(process.env.BUFFER_SIZE_THRESHOLD || '10', 10);
 const BUFFER_IDLE_TIMEOUT_MS = parseInt(process.env.BUFFER_IDLE_TIMEOUT_MS || '5000', 10);
 const WORKER_INTERVAL_MS = parseInt(process.env.WORKER_INTERVAL_MS || '1000', 10);
+const RAW_BUFFER_SIZE_THRESHOLD = parseInt(process.env.RAW_BUFFER_SIZE_THRESHOLD || '20', 10);
 const ACTIVE_MEETINGS_KEY = 'active_meetings';
 const FLUSH_LOCK_TTL = parseInt(process.env.FLUSH_LOCK_TTL || '10', 10); // Lock timeout in seconds
 const CLEANUP_THRESHOLD_MS = parseInt(process.env.CLEANUP_THRESHOLD_MS || '3600000', 10); // 1 hour default
@@ -124,14 +125,16 @@ async function pushToDeadLetterQueue(meetingId: string, items: string[]): Promis
 async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
   const redis = getRedisClient();
   const bufferKey = `meeting:${meetingId}:buffer`;
+  const rawBufferKey = `meeting:${meetingId}:raw_buffer`;
   const lastActiveKey = `meeting:${meetingId}:last_active`;
   let lockAcquired = false;
 
   try {
     // Check flush conditions
-    const [bufferLength, lastActiveStr] = await Promise.all([
+    const [bufferLength, lastActiveStr, rawBufferLength] = await Promise.all([
       redis.llen(bufferKey),
       redis.get(lastActiveKey),
+      redis.llen(rawBufferKey),
     ]);
 
     const lastActive = lastActiveStr ? parseInt(lastActiveStr, 10) : null;
@@ -142,7 +145,7 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
     const shouldFlushBySize = bufferLength >= BUFFER_SIZE_THRESHOLD;
     const shouldFlushByIdle = timeSinceLastActive > BUFFER_IDLE_TIMEOUT_MS;
 
-    if (!shouldFlushBySize && !shouldFlushByIdle) {
+    if (!shouldFlushBySize && !shouldFlushByIdle && rawBufferLength < RAW_BUFFER_SIZE_THRESHOLD) {
       return false; // No flush needed
     }
 
@@ -167,7 +170,7 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
       `(size: ${currentBufferLength}, idle: ${Math.round(timeSinceLastActive / 1000)}s)`
     );
 
-    // Atomic read-and-trim using Lua script (preferred method)
+    // Atomic read-and-trim using Lua script (preferred method) for CLEAN buffer
     // CRITICAL: Use LTRIM instead of DEL to prevent race conditions
     let items: string[] = [];
     const itemsToRead = Math.min(currentBufferLength, 1000); // Read up to 1000 items at a time
@@ -249,8 +252,30 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
 
     // CRITICAL: Dead Letter Queue handling
     // Wrap MongoDB write in try/catch and push to DLQ on failure
+    let cleanFlushed = false;
     try {
-      // Bulk insert to MongoDB (with chunking handled in mongoLayer)
+      // Publish Redis Pub/Sub event FIRST - dashboard gets real-time updates before MongoDB persistence
+      // This allows dashboard to show transcripts live as meeting happens
+      try {
+        const payload = JSON.stringify({ 
+          meetingId, 
+          segments,
+          userId: firstCaption.userId,
+          meetingTitle: firstCaption.meetingTitle
+        });
+        await redis.publish("meeting:transcript_update", payload);
+        console.log(
+          `[Worker] Published ${segments.length} segments for meeting ${meetingId} to Redis Pub/Sub (real-time dashboard update)`
+        );
+      } catch (pubError) {
+        // Don't fail the flush if publish fails - log and continue
+        console.error(
+          `[Worker] ⚠️ Failed to publish transcript update for meeting ${meetingId}:`,
+          pubError
+        );
+      }
+
+      // Save to MongoDB (persistence) - happens after dashboard notification
       await saveBatchToMongo(
         meetingId,
         segments,
@@ -260,11 +285,11 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
       );
 
       console.log(
-        `[FlushWorker] ✅ Successfully flushed ${captionData.length} captions ` +
+        `[FlushWorker] ✅ Successfully flushed ${captionData.length} captions to MongoDB ` +
         `for meeting ${meetingId}`
       );
 
-      return true;
+      cleanFlushed = true;
     } catch (mongoError) {
       // CRITICAL: Push failed items to Dead Letter Queue
       console.error(
@@ -279,6 +304,61 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
       // Re-throw to be caught by outer catch
       throw mongoError;
     }
+
+    // Flush RAW buffer (archive/debug)
+    let rawFlushed = false;
+    if (rawBufferLength > 0 && (rawBufferLength >= RAW_BUFFER_SIZE_THRESHOLD || shouldFlushBySize || shouldFlushByIdle)) {
+      let rawItems: string[] = [];
+      const rawItemsToRead = Math.min(rawBufferLength, 1000);
+      try {
+        if (flushScriptSha) {
+          const result = await redis.evalsha(flushScriptSha, 1, rawBufferKey, rawItemsToRead.toString());
+          rawItems = Array.isArray(result) ? result.map(String) : [];
+        } else {
+          const loadedSha = await redis.script('LOAD', FLUSH_BUFFER_SCRIPT);
+          flushScriptSha = loadedSha as string;
+          const result = await redis.evalsha(flushScriptSha, 1, rawBufferKey, rawItemsToRead.toString());
+          rawItems = Array.isArray(result) ? result.map(String) : [];
+        }
+      } catch (luaError) {
+        console.warn('[FlushWorker] ⚠️ Raw Lua script failed, using MULTI/EXEC fallback:', luaError);
+        const multi = redis.multi();
+        multi.lrange(rawBufferKey, 0, rawItemsToRead - 1);
+        multi.ltrim(rawBufferKey, rawItemsToRead, -1);
+        const results = await multi.exec();
+        if (results && results[0] && results[0][1]) {
+          rawItems = Array.isArray(results[0][1])
+            ? (results[0][1] as string[]).map(String)
+            : [];
+        }
+      }
+
+      if (rawItems.length > 0) {
+        const rawPayloads = rawItems
+          .map((item) => {
+            try {
+              return JSON.parse(item) as { text: string; speaker?: string; timestamp: number };
+            } catch (err) {
+              console.error('[FlushWorker] ❌ Failed to parse raw caption item', err);
+              return null;
+            }
+          })
+          .filter((i): i is { text: string; speaker?: string; timestamp: number } => i !== null);
+
+        if (rawPayloads.length > 0) {
+          try {
+            await saveRawBatch(meetingId, rawPayloads);
+            console.log(`[FlushWorker] ✅ Flushed ${rawPayloads.length} raw captions for meeting ${meetingId}`);
+            rawFlushed = true;
+          } catch (err) {
+            console.error(`[FlushWorker] 🚨 Failed to save raw captions for meeting ${meetingId}`, err);
+            await pushToDeadLetterQueue(meetingId, rawItems);
+          }
+        }
+      }
+    }
+
+    return cleanFlushed || rawFlushed;
   } catch (error) {
     console.error(
       `[FlushWorker] ❌ Failed to flush buffer for meeting ${meetingId}:`,

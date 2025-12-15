@@ -8,10 +8,10 @@
  * 4. Verifying flush worker processes them
  */
 
-import { getRedisClient } from './config/redis';
-import { initMongoConnection } from './infrastructure/mongo/transcriptRepo';
-import { pushCaptionsBatch } from './application/transcription/captionService';
-import { getBufferSize, getLastActiveTime } from './application/transcription/captionBuffer';
+import { getRedisClient } from '../src/config/redis';
+import { initMongoConnection } from '../src/infrastructure/mongo/transcriptRepo';
+import { pushCaptionsBatch } from '../src/application/transcription/captionService';
+import { getBufferSize, getLastActiveTime } from '../src/application/transcription/captionBuffer';
 
 async function testRedisConnection() {
   console.log('\n🔍 Testing Redis connection...');

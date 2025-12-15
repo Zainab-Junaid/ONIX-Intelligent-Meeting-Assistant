@@ -3,10 +3,10 @@
  * Tests the complete flow: Push -> Buffer -> Flush -> MongoDB
  */
 
-import { getRedisClient } from './config/redis';
-import { initMongoConnection, saveBatchToMongo } from './infrastructure/mongo/transcriptRepo';
-import { pushCaptionsBatch } from './application/transcription/captionService';
-import { getBufferSize } from './application/transcription/captionBuffer';
+import { getRedisClient } from '../src/config/redis';
+import { initMongoConnection, saveBatchToMongo } from '../src/infrastructure/mongo/transcriptRepo';
+import { pushCaptionsBatch } from '../src/application/transcription/captionService';
+import { getBufferSize } from '../src/application/transcription/captionBuffer';
 
 async function comprehensiveTest() {
   console.log('\n' + '='.repeat(60));

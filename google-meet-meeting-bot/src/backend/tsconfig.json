@@ -10,7 +10,7 @@
   "include": [
     "../backend/**/*.ts",
     "../playwright/**/*.ts",
-    "../models.ts",
+    "../domain/**/*.ts",
     "../storage.ts",
     "../summarize.ts"
   ]

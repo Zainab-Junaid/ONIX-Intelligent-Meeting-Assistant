@@ -27,6 +27,9 @@ services:
     environment:
       - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY}
       - DATABASE_URL=postgresql://meetingbot:supersecret@postgres:5432/meetingbotpoc
+      # Pass host path to auth.json so backend can mount it into bot containers
+      # This should be the absolute path to auth.json on the host machine
+      - AUTH_JSON_HOST_PATH=${AUTH_JSON_HOST_PATH:-}
     depends_on:
       - postgres
       - bot

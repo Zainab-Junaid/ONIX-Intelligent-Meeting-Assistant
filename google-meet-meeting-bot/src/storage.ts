@@ -1,7 +1,7 @@
 import prismaPkg from "@prisma/client";
 // Tolerate environments where TS can't see named export; fall back to runtime property
 const PrismaClient: { new(): any } = (prismaPkg as any).PrismaClient;
-import { MeetingSummaryInput, MeetingTranscript, Segment, ActionItemInput } from "./models";
+import { MeetingSummaryInput, MeetingTranscript, Segment, ActionItemInput } from "./domain/transcription/models";
 import {
 	getFirestoreAdmin,
 	serverTimestamp as fsServerTs,
@@ -134,7 +134,7 @@ export async function saveTranscriptBatch(
                 data: {
                   end: seg.end,
                   text: seg.text,
-                },image.png
+                },
               });
               console.log(`[FLUSH] ✅ Segment updated: "${seg.speaker}: ${seg.text.substring(0, 50)}${seg.text.length > 50 ? '...' : ''}"`);
             } else {
