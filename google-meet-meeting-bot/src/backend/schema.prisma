@@ -2,12 +2,305 @@ generator client {
     provider = "prisma-client-js"
 }
 
-// replace YYOURPASSWORDHERE with your db password
 datasource db {
     provider = "postgresql"
-    url      = "postgresql://meetingbot:supersecret@postgres:5432/meetingbotpoc"
+    url      = env("DATABASE_URL")
 }
 
+// ============================================================================
+// CORE TABLES - Multi-tenancy Foundation
+// ============================================================================
+
+model Tenant {
+    id          String   @id @default(uuid())
+    name        String
+    planType    String   @default("free") // free, pro, enterprise
+    domain      String?
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+    deletedAt   DateTime? // Soft delete
+
+    // Relations
+    users               User[]
+    roles               Role[]
+    meetings            Meeting[]
+    meetingParticipants MeetingParticipant[]
+    meetingSummaries    MeetingSummary[]
+    actionItems         ActionItem[]
+    speakerStats        SpeakerStats[]
+    meetingAnalytics    MeetingAnalytics[]
+    meetingKeywords     MeetingKeyword[]
+    followUps           FollowUp[]
+    calendarEvents      CalendarEvent[]
+}
+
+model User {
+    id           String    @id @default(uuid())
+    tenantId     String
+    tenant       Tenant    @relation(fields: [tenantId], references: [id])
+    name         String
+    email        String
+    passwordHash String?
+    userType     String    @default("employee") // student, employee, admin
+    createdAt    DateTime  @default(now())
+    updatedAt    DateTime  @updatedAt
+    deletedAt    DateTime? // Soft delete
+
+    // Relations
+    userRoles             UserRole[]
+    hostedMeetings        Meeting[]             @relation("MeetingHost")
+    participations        MeetingParticipant[]
+    generatedSummaries    MeetingSummary[]      @relation("SummaryGenerator")
+    assignedActionItems   ActionItem[]
+    speakerStats          SpeakerStats[]
+    calendarEvents        CalendarEvent[]
+    dominantInMeetings    MeetingAnalytics[]    @relation("DominantSpeaker")
+
+    @@unique([tenantId, email])
+}
+
+model Role {
+    id          String   @id @default(uuid())
+    tenantId    String
+    tenant      Tenant   @relation(fields: [tenantId], references: [id])
+    name        String
+    permissions Json     @default("{}")
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+
+    // Relations
+    userRoles   UserRole[]
+
+    @@unique([tenantId, name])
+}
+
+model UserRole {
+    id         String   @id @default(uuid())
+    userId     String
+    user       User     @relation(fields: [userId], references: [id])
+    roleId     String
+    role       Role     @relation(fields: [roleId], references: [id])
+    assignedAt DateTime @default(now())
+    createdAt  DateTime @default(now())
+    updatedAt  DateTime @updatedAt
+
+    @@unique([userId, roleId])
+}
+
+// ============================================================================
+// MEETING TABLES - Core Meeting Data
+// ============================================================================
+
+model Meeting {
+    id               String    @id @default(uuid())
+    tenantId         String
+    tenant           Tenant    @relation(fields: [tenantId], references: [id])
+    hostUserId       String?
+    host             User?     @relation("MeetingHost", fields: [hostUserId], references: [id])
+    externalMeetId   String?   // Google Meet/Zoom ID
+    mongoTranscriptId String?  // Reference to MongoDB transcript
+    platform         String    @default("google_meet") // google_meet, zoom, teams
+    title            String?
+    startTime        DateTime?
+    endTime          DateTime?
+    status           String    @default("scheduled") // scheduled, live, completed, cancelled
+    segmentCount     Int       @default(0) // Cached from MongoDB
+    createdAt        DateTime  @default(now())
+    updatedAt        DateTime  @updatedAt
+    deletedAt        DateTime? // Soft delete
+
+    // Relations
+    participants     MeetingParticipant[]
+    summaries        MeetingSummary[]
+    actionItems      ActionItem[]
+    followUps        FollowUp[]
+    speakerStats     SpeakerStats[]
+    analytics        MeetingAnalytics?
+    keywords         MeetingKeyword[]
+    calendarEvents   CalendarEvent[]
+
+    // Legacy compatibility - link to old MeetingJob
+    meetingJobs      MeetingJob[]
+}
+
+model MeetingParticipant {
+    id               String   @id @default(uuid())
+    meetingId        String
+    meeting          Meeting  @relation(fields: [meetingId], references: [id])
+    userId           String?  // Nullable - can be external guest
+    user             User?    @relation(fields: [userId], references: [id])
+    tenantId         String   // Denormalized for fast queries
+    tenant           Tenant   @relation(fields: [tenantId], references: [id])
+    participantEmail String
+    participantName  String?
+    participantRole  String   @default("attendee") // host, co-host, attendee
+    joinedAt         DateTime?
+    leftAt           DateTime?
+    createdAt        DateTime @default(now())
+    updatedAt        DateTime @updatedAt
+
+    @@unique([meetingId, participantEmail])
+}
+
+// ============================================================================
+// ANALYTICS TABLES - Speaker & Meeting Metrics
+// ============================================================================
+
+model SpeakerStats {
+    id                   String   @id @default(uuid())
+    meetingId            String
+    meeting              Meeting  @relation(fields: [meetingId], references: [id])
+    userId               String?  // Nullable for unidentified speakers
+    user                 User?    @relation(fields: [userId], references: [id])
+    tenantId             String   // Denormalized
+    tenant               Tenant   @relation(fields: [tenantId], references: [id])
+    speakerLabel         String?  // "Speaker A", "Speaker B" from diarization
+    speakingTimeSeconds  Int      @default(0)
+    wordCount            Int      @default(0)
+    turnCount            Int      @default(0)  // How many times they spoke
+    interruptionCount    Int      @default(0)
+    questionCount        Int      @default(0)  // Detected questions asked
+    talkToListenRatio    Float?   // Ratio of talking vs listening
+    sentiment            String?  // positive, neutral, negative
+    createdAt            DateTime @default(now())
+    updatedAt            DateTime @updatedAt
+
+    @@unique([meetingId, speakerLabel])
+}
+
+model MeetingAnalytics {
+    id                        String   @id @default(uuid())
+    meetingId                 String   @unique
+    meeting                   Meeting  @relation(fields: [meetingId], references: [id])
+    tenantId                  String   // Denormalized
+    tenant                    Tenant   @relation(fields: [tenantId], references: [id])
+    totalDurationSeconds      Int?
+    totalSpeakers             Int      @default(0)
+    totalWords                Int      @default(0)
+    avgSpeakingTimePerPerson  Float?
+    participationBalanceScore Float?   // 0-1 (1 = perfectly balanced)
+    questionCount             Int      @default(0)
+    dominantSpeakerId         String?
+    dominantSpeaker           User?    @relation("DominantSpeaker", fields: [dominantSpeakerId], references: [id])
+    sentimentBreakdown        Json?    // {"positive": 0.6, "neutral": 0.3, "negative": 0.1}
+    topicsDiscussed           String[] // Array of main topics
+    createdAt                 DateTime @default(now())
+    updatedAt                 DateTime @updatedAt
+}
+
+model MeetingKeyword {
+    id             String   @id @default(uuid())
+    meetingId      String
+    meeting        Meeting  @relation(fields: [meetingId], references: [id])
+    tenantId       String   // Denormalized
+    tenant         Tenant   @relation(fields: [tenantId], references: [id])
+    keyword        String
+    frequency      Int      @default(1)
+    relevanceScore Float    @default(0.5) // 0-1, how relevant is this keyword
+    category       String?  // topic, action, entity, etc.
+    createdAt      DateTime @default(now())
+
+    @@unique([meetingId, keyword])
+}
+
+// ============================================================================
+// AI OUTPUT TABLES - Summaries, Actions, Follow-ups
+// ============================================================================
+
+model MeetingSummary {
+    id                  String   @id @default(uuid())
+    meetingId           String
+    meeting             Meeting? @relation(fields: [meetingId], references: [id])
+    generatedByUserId   String?  // Nullable for AI-generated
+    generatedBy         User?    @relation("SummaryGenerator", fields: [generatedByUserId], references: [id])
+    tenantId            String?  // Denormalized (nullable for legacy)
+    tenant              Tenant?  @relation(fields: [tenantId], references: [id])
+    userId              String?  // Legacy field
+    meetingTitle        String?  // Legacy field
+    summaryText         String
+    language            String   @default("en")
+    model               String?  // gpt-4, gemini-pro, etc.
+    isSelected          Boolean  @default(false) // User-approved version
+    isFallback          Boolean  @default(false)
+    generatedAt         DateTime @default(now()) // Legacy field for backward compat
+    createdAt           DateTime @default(now())
+    updatedAt           DateTime? @default(now()) // Made optional for legacy data
+}
+
+model ActionItem {
+    id               String   @id @default(uuid())
+    meetingId        String
+    meeting          Meeting  @relation(fields: [meetingId], references: [id])
+    assignedToUserId String?
+    assignedTo       User?    @relation(fields: [assignedToUserId], references: [id])
+    tenantId         String   // Denormalized
+    tenant           Tenant   @relation(fields: [tenantId], references: [id])
+    description      String
+    dueDate          DateTime?
+    priority         String   @default("medium") // low, medium, high
+    status           String   @default("pending") // pending, in_progress, completed
+    completedAt      DateTime?
+    createdAt        DateTime @default(now())
+    updatedAt        DateTime @updatedAt
+}
+
+model FollowUp {
+    id        String   @id @default(uuid())
+    meetingId String
+    meeting   Meeting  @relation(fields: [meetingId], references: [id])
+    tenantId  String   // Denormalized
+    tenant    Tenant   @relation(fields: [tenantId], references: [id])
+    type      String   // email, reminder, task, notification
+    content   String
+    sentAt    DateTime?
+    status    String   @default("pending") // pending, sent, failed
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+// ============================================================================
+// CALENDAR INTEGRATION
+// ============================================================================
+
+model CalendarEvent {
+    id              String   @id @default(uuid())
+    userId          String
+    user            User     @relation(fields: [userId], references: [id])
+    meetingId       String?
+    meeting         Meeting? @relation(fields: [meetingId], references: [id])
+    tenantId        String   // Denormalized
+    tenant          Tenant   @relation(fields: [tenantId], references: [id])
+    externalEventId String?  // Google Calendar event ID
+    source          String   @default("google_calendar") // google_calendar, outlook, ical
+    title           String?
+    startTime       DateTime?
+    endTime         DateTime?
+    syncedAt        DateTime @default(now())
+    createdAt       DateTime @default(now())
+    updatedAt       DateTime @updatedAt
+
+    @@unique([userId, externalEventId])
+}
+
+// ============================================================================
+// LEGACY TABLES - For backward compatibility
+// ============================================================================
+
+// Keep for backward compatibility with existing bot
+model MeetingJob {
+    id           String   @id @default(uuid())
+    userId       String?
+    meetingUrl   String
+    meetingTitle String?
+    status       String   @default("pending")
+    meetingId    String?
+    meeting      Meeting? @relation(fields: [meetingId], references: [id])
+    createdAt    DateTime @default(now())
+    updatedAt    DateTime @updatedAt
+}
+
+// Legacy MeetingTranscript - kept for backward compatibility
+// Primary storage is now MongoDB, but Prisma models exist for debug endpoints
 model MeetingTranscript {
     id          String    @id @default(uuid())
     meetingId   String    @unique
@@ -15,17 +308,6 @@ model MeetingTranscript {
     meetingTitle String?
     createdAt   DateTime
     segments    Segment[]
-}
-
-model MeetingSummary {
-    id           String   @id @default(uuid())
-    meetingId    String
-    userId       String?
-    meetingTitle String?
-    summaryText  String
-    generatedAt  DateTime
-    model        String
-    isFallback   Boolean  @default(false)
 }
 
 model Segment {
@@ -38,15 +320,3 @@ model Segment {
     speaker           String
     @@unique([meetingId, start])
 }
-
-model MeetingJob {
-  id           String   @id @default(uuid())
-  userId       String?
-  meetingUrl   String
-  meetingTitle String?
-  status       String   @default("pending")
-  meetingId    String? 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-}
-
