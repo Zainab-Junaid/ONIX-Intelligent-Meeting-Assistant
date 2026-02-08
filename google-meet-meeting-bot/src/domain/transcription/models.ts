@@ -8,6 +8,7 @@ export type MeetingTranscript = {
 
 export type Segment = {
   segmentId: string;
+  meetingId?: string;  // Optional - used in MongoDB storage
   start: number;
   end: number;
   text: string;

@@ -40,6 +40,9 @@ interface MeetingTranscriptDocument extends Document {
   createdAt: Date;
   updatedAt: Date;
   segments: Segment[];
+  // Finalization marker - prevents post-processing of partial transcripts
+  finalized: boolean;
+  finalizedAt?: Date;
 }
 
 const MeetingTranscriptSchema = new Schema<MeetingTranscriptDocument>({
@@ -49,6 +52,9 @@ const MeetingTranscriptSchema = new Schema<MeetingTranscriptDocument>({
   segments: { type: [SegmentSchema], default: [] },
   createdAt: { type: Date, required: true, default: Date.now },
   updatedAt: { type: Date, required: true, default: Date.now },
+  // Finalization fields - CRITICAL for processing guards
+  finalized: { type: Boolean, default: false, index: true },
+  finalizedAt: { type: Date },
 });
 
 // Raw caption collection
@@ -309,3 +315,183 @@ export async function closeMongoConnection(): Promise<void> {
   }
 }
 
+/**
+ * Mark a transcript as finalized.
+ * 
+ * CRITICAL: This is a GUARD function. The post-meeting processor MUST verify
+ * that finalized=true before processing. This prevents processing of partial
+ * transcripts when the meeting is still ongoing or the bot crashed mid-flush.
+ * 
+ * This should be called by the flushWorker AFTER the final segment batch
+ * has been saved to MongoDB.
+ * 
+ * @param meetingId - The meeting ID to finalize
+ * @returns true if finalization was successful, false if transcript not found
+ */
+export async function finalizeTranscript(meetingId: string): Promise<boolean> {
+  if (!MeetingTranscriptModel) {
+    try {
+      await initMongoConnection();
+    } catch {
+      console.error('[MongoDB] ❌ Cannot finalize transcript - MongoDB not connected');
+      return false;
+    }
+  }
+
+  try {
+    const result = await MeetingTranscriptModel.updateOne(
+      { meetingId, finalized: { $ne: true } }, // Only update if not already finalized
+      {
+        $set: {
+          finalized: true,
+          finalizedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      // Either transcript doesn't exist or already finalized
+      const existing = await MeetingTranscriptModel.findOne({ meetingId });
+      if (existing) {
+        console.log(`[MongoDB] ℹ️ Transcript ${meetingId} already finalized`);
+        return true; // Already finalized is still success
+      } else {
+        console.error(`[MongoDB] ❌ Transcript ${meetingId} not found for finalization`);
+        return false;
+      }
+    }
+
+    console.log(`[MongoDB] ✅ Transcript ${meetingId} finalized successfully`);
+    return true;
+  } catch (error) {
+    console.error(`[MongoDB] ❌ Error finalizing transcript ${meetingId}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Get a transcript from MongoDB by meetingId.
+ * Used for dashboard queries - MongoDB is source of truth for transcripts.
+ * 
+ * @param meetingId - The meeting ID to fetch
+ * @returns Transcript with segments and finalization status, or null if not found
+ */
+export async function getTranscriptFromMongo(meetingId: string): Promise<{
+  meetingId: string;
+  userId?: string;
+  meetingTitle?: string;
+  createdAt: Date;
+  finalized: boolean;
+  finalizedAt?: Date;
+  segments: Array<{
+    segmentId?: string;
+    speaker: string;
+    text: string;
+    start: number;
+    end: number;
+  }>;
+} | null> {
+  if (!MeetingTranscriptModel) {
+    // Try to connect if not already connected
+    try {
+      await initMongoConnection();
+    } catch {
+      console.error('[MongoDB] ❌ Cannot get transcript - MongoDB not connected');
+      return null;
+    }
+  }
+
+  try {
+    const doc = await MeetingTranscriptModel.findOne({ meetingId });
+    if (!doc) {
+      return null;
+    }
+
+    return {
+      meetingId: doc.meetingId,
+      userId: doc.userId,
+      meetingTitle: doc.meetingTitle,
+      createdAt: doc.createdAt,
+      finalized: doc.finalized || false,
+      finalizedAt: doc.finalizedAt,
+      segments: doc.segments.map(seg => ({
+        segmentId: seg.segmentId,
+        speaker: seg.speaker,
+        text: seg.text,
+        start: seg.start,
+        end: seg.end,
+      })),
+    };
+  } catch (error) {
+    console.error(`[MongoDB] ❌ Error fetching transcript for meeting ${meetingId}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Get all transcripts from MongoDB.
+ * Used for dashboard meeting list - MongoDB is source of truth.
+ * 
+ * @returns Array of transcripts with segments
+ */
+export async function getAllTranscriptsFromMongo(): Promise<Array<{
+  meetingId: string;
+  userId?: string;
+  meetingTitle?: string;
+  createdAt: Date;
+  segments: Array<{
+    segmentId?: string;
+    speaker: string;
+    text: string;
+    start: number;
+    end: number;
+  }>;
+}>> {
+  if (!MeetingTranscriptModel) {
+    try {
+      await initMongoConnection();
+    } catch {
+      console.error('[MongoDB] ❌ Cannot list transcripts - MongoDB not connected');
+      return [];
+    }
+  }
+
+  try {
+    const docs = await MeetingTranscriptModel.find({})
+      .sort({ createdAt: -1 })
+      .limit(100); // Limit for performance
+
+    return docs.map(doc => ({
+      meetingId: doc.meetingId,
+      userId: doc.userId,
+      meetingTitle: doc.meetingTitle,
+      createdAt: doc.createdAt,
+      segments: doc.segments.map(seg => ({
+        segmentId: seg.segmentId,
+        speaker: seg.speaker,
+        text: seg.text,
+        start: seg.start,
+        end: seg.end,
+      })),
+    }));
+  } catch (error) {
+    console.error('[MongoDB] ❌ Error fetching all transcripts:', error);
+    return [];
+  }
+}
+
+/**
+ * Get segment count for a specific meeting from MongoDB.
+ * Used to sync PostgreSQL segmentCount with MongoDB reality.
+ */
+export async function getSegmentCountForMeeting(meetingId: string): Promise<number> {
+  try {
+    await initMongoConnection();
+    const transcript = await MeetingTranscriptModel.findOne({ meetingId }).select('segments').lean();
+    return transcript?.segments?.length ?? 0;
+  } catch (error) {
+    console.error(`[MongoDB] ❌ Error getting segment count for ${meetingId}:`, error);
+    return 0;
+  }
+}

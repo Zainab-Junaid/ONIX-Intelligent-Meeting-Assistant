@@ -73,22 +73,22 @@ export async function pushCaptionToBuffer(
     // Use a pipeline for atomic multi-operation
     // This ensures all three operations succeed or fail together
     const pipeline = redis.pipeline();
-    
+
     // 1. Append caption to buffer (Redis List)
     // RPUSH is O(1) and atomic
     pipeline.rpush(bufferKey, JSON.stringify(captionData));
-    
+
     // 2. Update last activity timestamp
     // Helps the worker determine if a meeting is idle
     pipeline.set(lastActiveKey, now.toString());
-    
+
     // 3. Add meeting to active_meetings set
     // Enables efficient scanning without key pattern matching
     pipeline.sadd(activeMeetingsKey, meetingId);
-    
+
     // Execute all operations atomically
     await pipeline.exec();
-    
+
     // Log for debugging (can be removed in production if too verbose)
     if (process.env.DEBUG_BUFFER === '1') {
       const bufferLength = await redis.llen(bufferKey);

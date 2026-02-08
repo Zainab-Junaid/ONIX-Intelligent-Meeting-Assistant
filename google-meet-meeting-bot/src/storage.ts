@@ -1,19 +1,17 @@
-import prismaPkg from "@prisma/client";
+import { prisma } from "./lib/prisma";
 // Tolerate environments where TS can't see named export; fall back to runtime property
-const PrismaClient: { new(): any } = (prismaPkg as any).PrismaClient;
 import { MeetingSummaryInput, MeetingTranscript, Segment, ActionItemInput } from "./domain/transcription/models";
 import {
-	getFirestoreAdmin,
-	serverTimestamp as fsServerTs,
-	fsCreateOrUpdateMeeting,
-	fsAddSegment,
-	fsFinalizeMeetingDuration,
-	fsSaveSummaryOnce,
-	fsSaveActionItemsOnce,
+  getFirestoreAdmin,
+  serverTimestamp as fsServerTs,
+  fsCreateOrUpdateMeeting,
+  fsAddSegment,
+  fsFinalizeMeetingDuration,
+  fsSaveSummaryOnce,
+  fsSaveActionItemsOnce,
 } from "./firestoreAdmin";
 
-// init prisma client to access db
-const prisma = new PrismaClient();
+// Using singleton prisma client from lib/prisma.ts
 
 // Test database connection
 export async function testDatabaseConnection() {
@@ -28,12 +26,12 @@ export async function testDatabaseConnection() {
 
     await prisma.$connect();
     console.log("✅ Database connection successful");
-    
+
     // Test if tables exist
     const transcriptCount = await prisma.meetingTranscript.count();
     const segmentCount = await prisma.segment.count();
     console.log(`📊 Database status: ${transcriptCount} transcripts, ${segmentCount} segments`);
-    
+
     return true;
   } catch (error) {
     console.error("❌ Database connection failed:", error);
@@ -48,7 +46,7 @@ export async function createMeetingJob(meetingUrl: string, userId?: string, meet
     return { id: "fs-job-" + Date.now(), meetingUrl, userId, meetingTitle } as any;
   }
   return await prisma.meetingJob.create({
-    data: { 
+    data: {
       meetingUrl,
       userId,
       meetingTitle
@@ -110,7 +108,7 @@ export async function saveTranscriptBatch(
         create: { meetingId, createdAt, userId, meetingTitle },
       });
       console.log(`[FLUSH] MeetingTranscript upserted for ${meetingId}`);
-      
+
       // add segments individually - use composite key of meetingId + speaker + start to prevent overwrites
       let savedCount = 0;
       for (const seg of batch) {
@@ -184,24 +182,24 @@ export async function saveTranscriptBatch(
           }
         }
       }
-  
+
       console.log(`[FLUSH] ✅ SUCCESS: ${savedCount}/${batch.length} segments saved to database for meeting ${meetingId}`);
       totalSaved = savedCount;
     }
-    
+
     // If this is a final flush (force=true), trigger summary generation with retry
     if (force && totalSaved > 0) {
       console.log(`🚀 Final flush detected - triggering summary generation for meeting ${meetingId}`);
       let retryCount = 0;
       const maxRetries = 3;
-      
+
       while (retryCount < maxRetries) {
         try {
           const summaryRes = await fetch(`http://backend:3001/debug/generate-summary/${meetingId}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
           });
-          
+
           if (summaryRes.ok) {
             console.log(`✅ Summary generation triggered successfully for meeting ${meetingId}`);
             break; // Success, exit retry loop
@@ -213,14 +211,14 @@ export async function saveTranscriptBatch(
         } catch (summaryErr) {
           console.error(`❌ Summary generation error for meeting ${meetingId} (attempt ${retryCount + 1}/${maxRetries}):`, summaryErr);
         }
-        
+
         retryCount++;
         if (retryCount < maxRetries) {
           console.log(`🔄 Retrying summary generation in 2 seconds...`);
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
-      
+
       if (retryCount >= maxRetries) {
         console.error(`❌ CRITICAL: Summary generation failed after ${maxRetries} attempts for meeting ${meetingId}`);
       }
@@ -270,7 +268,7 @@ export async function getTranscript(
   return {
     meetingId: transcript.meetingId,
     createdAt: transcript.createdAt,
-    segments: transcript.segments,
+    segments: transcript.segments as any,
   };
 }
 
@@ -285,12 +283,12 @@ export async function listAllTranscripts() {
         createdAt: 'desc'
       }
     });
-    
+
     console.log(`📋 Found ${transcripts.length} transcripts in database:`);
     transcripts.forEach((t: any, index: number) => {
       console.log(`${index + 1}. Meeting ${t.meetingId}: ${t.segments.length} segments (${t.createdAt})`);
     });
-    
+
     return transcripts;
   } catch (error) {
     console.error("❌ Failed to list transcripts:", error);
@@ -329,7 +327,7 @@ export async function saveSummary(summary: MeetingSummaryInput) {
     console.log(`💾 Saving summary for meeting ${summary.meetingId}`);
     console.log(`📝 Summary text length: ${summary.summaryText.length} characters`);
     console.log(`🤖 Model used: ${summary.model}`);
-    
+
     if (process.env.ENABLE_FIRESTORE === "1") {
       const saved = await fsSaveSummaryOnce(summary.meetingId, {
         content: summary.summaryText,
@@ -346,23 +344,23 @@ export async function saveSummary(summary: MeetingSummaryInput) {
 
     // Check if summary already exists for this meeting (prevent duplicates)
     const existingSummary = await prisma.meetingSummary.findFirst({
-      where: { 
+      where: {
         meetingId: summary.meetingId,
         isFallback: false // Only check non-fallback summaries
       },
     });
-    
+
     if (existingSummary) {
       console.log(`⚠️ Summary already exists for meeting ${summary.meetingId}, skipping duplicate`);
       return existingSummary;
     }
-    
+
     // Only save non-fallback summaries
     if (summary.isFallback) {
       console.log(`⚠️ Skipping fallback summary for meeting ${summary.meetingId}`);
       return null;
     }
-    
+
     const result = await prisma.meetingSummary.create({
       data: {
         meetingId: summary.meetingId,
@@ -374,7 +372,7 @@ export async function saveSummary(summary: MeetingSummaryInput) {
         isFallback: summary.isFallback || false,
       },
     });
-    
+
     console.log(`✅ Summary saved successfully with ID: ${result.id}`);
     return result;
   } catch (error) {
@@ -383,13 +381,15 @@ export async function saveSummary(summary: MeetingSummaryInput) {
   }
 }
 
-// save action items as MeetingJobs
+// save action items to proper ActionItem table (not MeetingJob!)
+// Uses hash-based deduplication for idempotency
 export async function saveActionItems(actionItems: ActionItemInput[]) {
   try {
-    console.log(`💾 Saving ${actionItems.length} action items as MeetingJobs`);
+    console.log(`💾 Saving ${actionItems.length} action items to ActionItem table`);
+
     if (process.env.ENABLE_FIRESTORE === "1") {
       const items = actionItems.map((i) => ({
-        id: `${i.meetingId}-${(i.item || "").slice(0, 32)}-${Date.now()}`,
+        id: `${i.meetingId}-${hashText(i.item || "")}`,
         text: i.item,
         assignedTo: i.assignedTo,
         dueDate: i.dueDate,
@@ -399,44 +399,74 @@ export async function saveActionItems(actionItems: ActionItemInput[]) {
       return items as any;
     }
 
-    // De-duplicate within the batch (case-insensitive text) and against existing DB rows for the meeting
-    const results = [] as any[];
-    const seenInBatch = new Set<string>();
-    for (const item of actionItems) {
-      const key = `${item.meetingId}::${(item.item || '').trim().toLowerCase()}`;
-      if (seenInBatch.has(key)) {
-        console.log(`⚠️ Skipping duplicate action item in batch: "${item.item}"`);
-        continue;
-      }
-      seenInBatch.add(key);
+    // Get tenantId from meeting, default to constant if not found
+    const { DEFAULT_TENANT_ID } = await import('./config/constants');
+    const meetingId = actionItems[0]?.meetingId;
+    let tenantId = DEFAULT_TENANT_ID;
 
-      // Check if an identical action item already exists for this meeting
-      const existing = await prisma.meetingJob.findFirst({
-        where: {
-          meetingId: item.meetingId,
-          meetingUrl: { startsWith: 'action-item-' },
-          meetingTitle: item.item,
-        },
+    if (meetingId) {
+      const meeting = await prisma.meeting.findUnique({
+        where: { id: meetingId },
+        select: { tenantId: true },
       });
-      if (existing) {
-        console.log(`⚠️ Skipping existing action item for meeting ${item.meetingId}: "${item.item}"`);
-        results.push(existing);
-        continue;
+      if (meeting?.tenantId) {
+        tenantId = meeting.tenantId;
       }
-
-      const result = await prisma.meetingJob.create({
-        data: {
-          meetingUrl: `action-item-${item.meetingId}-${Date.now()}`,
-          meetingTitle: item.item,
-          userId: item.userId,
-          status: item.status || 'pending',
-          meetingId: item.meetingId,
-        },
-      });
-      results.push(result);
     }
-    
-    console.log(`✅ ${results.length} action items saved as MeetingJobs`);
+
+    // De-duplicate within the batch using hash of description
+    const results = [] as any[];
+    const seenHashes = new Set<string>();
+
+    for (const item of actionItems) {
+      const descriptionHash = hashText(item.item || '');
+      const dedupeKey = `${item.meetingId}::${descriptionHash}`;
+
+      if (seenHashes.has(dedupeKey)) {
+        console.log(`⚠️ Skipping duplicate action item in batch: "${(item.item || '').substring(0, 50)}..."`);
+        continue;
+      }
+      seenHashes.add(dedupeKey);
+
+      // Upsert: insert if not exists, update if exists
+      // Uses meetingId + descriptionHash as natural key
+      try {
+        // Try to find existing by meetingId + similar description
+        const existing = await prisma.actionItem.findFirst({
+          where: {
+            meetingId: item.meetingId,
+            description: item.item,
+          },
+        });
+
+        if (existing) {
+          console.log(`⚠️ Action item already exists for meeting ${item.meetingId}, skipping`);
+          results.push(existing);
+          continue;
+        }
+
+        const result = await prisma.actionItem.create({
+          data: {
+            meetingId: item.meetingId,
+            tenantId,
+            description: item.item || 'Unnamed action item',
+            status: item.status || 'pending',
+            priority: 'medium',
+            // assignedToUserId requires User lookup, skip for now
+          },
+        });
+        results.push(result);
+      } catch (createError: any) {
+        // Handle potential race condition with duplicate insert
+        if (createError?.code === 'P2002') {
+          console.log(`⚠️ Action item already exists (race condition), skipping`);
+        } else {
+          console.error(`❌ Failed to create action item:`, createError);
+        }
+      }
+    }
+
+    console.log(`✅ ${results.length} action items saved to ActionItem table`);
     return results;
   } catch (error) {
     console.error(`❌ Failed to save action items:`, error);
@@ -444,21 +474,59 @@ export async function saveActionItems(actionItems: ActionItemInput[]) {
   }
 }
 
-// get action items for a meeting (filter MeetingJobs that are action items)
+// get action items for a meeting from ActionItem table
 export async function getActionItems(meetingId: string) {
   try {
-    const actionItems = await prisma.meetingJob.findMany({
-      where: { 
+    // Try new ActionItem table first
+    const actionItems = await prisma.actionItem.findMany({
+      where: { meetingId },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (actionItems.length > 0) {
+      console.log(`📋 Found ${actionItems.length} action items in ActionItem table for meeting ${meetingId}`);
+      return actionItems.map(item => ({
+        id: item.id,
+        meetingId: item.meetingId,
+        item: item.description,
+        status: item.status,
+        assignedTo: item.assignedToUserId,
+        priority: item.priority,
+        createdAt: item.createdAt,
+      }));
+    }
+
+    // Fallback to legacy MeetingJob table for backward compatibility
+    const legacyItems = await prisma.meetingJob.findMany({
+      where: {
         meetingId,
         meetingUrl: { startsWith: 'action-item-' }
       },
       orderBy: { createdAt: 'asc' },
     });
-    
-    console.log(`📋 Found ${actionItems.length} action items for meeting ${meetingId}`);
-    return actionItems;
+
+    console.log(`📋 Found ${legacyItems.length} legacy action items in MeetingJob for meeting ${meetingId}`);
+    return legacyItems.map(item => ({
+      id: item.id,
+      meetingId: item.meetingId,
+      item: item.meetingTitle,
+      status: item.status,
+      createdAt: item.createdAt,
+    }));
   } catch (error) {
     console.error(`❌ Failed to get action items for meeting ${meetingId}:`, error);
     return [];
   }
+}
+
+// Helper: Create a simple hash of text for deduplication
+function hashText(text: string): string {
+  let hash = 0;
+  const str = (text || '').trim().toLowerCase();
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(36);
 }

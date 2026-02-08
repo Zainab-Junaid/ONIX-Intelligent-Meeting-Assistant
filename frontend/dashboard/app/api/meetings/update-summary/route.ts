@@ -23,7 +23,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const token = authHeader.split('Bearer ')[1];
-    
+
     // Verify Firebase token
     const decodedToken = await getAuth().verifyIdToken(token);
     const userId = decodedToken.uid;
@@ -31,8 +31,8 @@ export async function PUT(request: NextRequest) {
     // Get meeting ID and updated summary text from request body
     const { meetingId, summaryText } = await request.json();
     if (!meetingId || !summaryText) {
-      return NextResponse.json({ 
-        error: 'Meeting ID and summary text required' 
+      return NextResponse.json({
+        error: 'Meeting ID and summary text required'
       }, { status: 400 });
     }
 
@@ -42,11 +42,11 @@ export async function PUT(request: NextRequest) {
       'http://127.0.0.1:3001',
       'http://backend:3001'
     ];
-    
+
     let updated = false;
     let lastError: any = null;
     let lastResponse: Response | null = null;
-    
+
     for (const backendUrl of backendUrls) {
       try {
         const response = await fetch(`${backendUrl}/update-summary/${meetingId}`, {
@@ -55,7 +55,7 @@ export async function PUT(request: NextRequest) {
           body: JSON.stringify({ summaryText }),
           signal: AbortSignal.timeout(10000)
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           updated = true;
@@ -66,16 +66,24 @@ export async function PUT(request: NextRequest) {
           lastResponse = response;
           lastError = errorData;
           console.log(`⚠️ Backend returned error (${response.status}):`, errorData);
-          
+
           // If 404, try direct database update immediately
           if (response.status === 404) {
             console.log(`🔄 Backend endpoint not found (404), trying direct database update...`);
+
+            // Require DATABASE_URL - no hardcoded credentials
+            if (!process.env.DATABASE_URL) {
+              console.error('DATABASE_URL not set, cannot update directly');
+              continue;
+            }
+
             let dbPool: any = null;
             try {
               const { Pool } = require('pg');
               dbPool = new Pool({
-                connectionString: process.env.DATABASE_URL || 'postgresql://meetingbot:supersecret@localhost:5432/meetingbotpoc',
+                connectionString: process.env.DATABASE_URL,
                 connectionTimeoutMillis: 5000,
+                max: 2, // Minimal pool for this one-time query
               });
 
               // Check if summary exists
@@ -114,7 +122,7 @@ export async function PUT(request: NextRequest) {
                 connectionString: process.env.DATABASE_URL ? 'Using DATABASE_URL from env' : 'Using default connection string'
               });
               if (dbPool) {
-                await dbPool.end().catch(() => {});
+                await dbPool.end().catch(() => { });
               }
               // Continue to try next URL or return error
             }
@@ -149,15 +157,15 @@ export async function PUT(request: NextRequest) {
     }
 
     if (!updated) {
-      const errorMessage = lastResponse 
+      const errorMessage = lastResponse
         ? (lastError?.error || lastError?.details || `Backend returned ${lastResponse.status}. ${lastResponse.status === 404 ? 'The /update-summary endpoint may not be registered. Please restart the backend server.' : 'Please check backend logs.'}`)
         : (lastError?.message || 'Could not reach backend service. Make sure the backend is running on port 3001.');
-      
-      return NextResponse.json({ 
+
+      return NextResponse.json({
         error: 'Failed to update summary',
         message: errorMessage,
         details: lastError,
-        suggestion: lastResponse?.status === 404 
+        suggestion: lastResponse?.status === 404
           ? 'The backend server may need to be restarted to register the new /update-summary endpoint. The summary was not saved.'
           : 'Please check if the backend is running and accessible.'
       }, { status: lastResponse?.status || 500 });
@@ -181,9 +189,9 @@ export async function PUT(request: NextRequest) {
 
   } catch (error: any) {
     console.error('Error updating summary:', error);
-    return NextResponse.json({ 
-      error: 'Failed to update summary', 
-      details: error?.message 
+    return NextResponse.json({
+      error: 'Failed to update summary',
+      details: error?.message
     }, { status: 500 });
   }
 }

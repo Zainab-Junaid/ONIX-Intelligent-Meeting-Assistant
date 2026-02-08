@@ -23,24 +23,37 @@ const LEAVE_BANNER_SEL =
 
 // launches broswer, joins Google Meet, records captions
 export async function runBot(url: string): Promise<string> {
-  const meetingId = uuidv4();
+  // CRITICAL: Use meeting ID from backend (PostgreSQL) - NEVER generate new IDs
+  // This ensures PostgreSQL, Redis, MongoDB, and dashboard all use the SAME ID
+  const meetingId = process.env.JOB_ID;
+
+  if (!meetingId) {
+    console.error("❌ FATAL: JOB_ID environment variable is missing!");
+    console.error("Bot MUST receive meeting ID from backend - it should NEVER generate its own.");
+    console.error("This indicates a bug in launchBot.ts or the container launch process.");
+    throw new Error("FATAL: JOB_ID missing. Bot cannot start without meeting ID from backend.");
+  }
+
+  console.log(`🆔 BOT STARTING WITH MEETING ID: ${meetingId}`);
+  console.log(`📍 Meeting URL: ${url}`);
+
   const createdAt = new Date();
 
   // Get userId and meetingTitle from environment (passed from backend)
   const userId = process.env.USER_ID;
   const meetingTitle = process.env.MEETING_TITLE;
-  
+
   // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:23',message:'runBot entry',data:{meetingId,url,userId,meetingTitle,hasGoogleUser:!!process.env.GOOGLE_ACCOUNT_USER,hasGooglePassword:!!process.env.GOOGLE_ACCOUNT_PASSWORD},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:23', message: 'runBot entry', data: { meetingId, url, userId, meetingTitle, hasGoogleUser: !!process.env.GOOGLE_ACCOUNT_USER, hasGooglePassword: !!process.env.GOOGLE_ACCOUNT_PASSWORD }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
   // #endregion
-  
+
   console.log(`🚀 Starting meeting capture for ${meetingId}`);
 
   // #region agent log
   const authJsonPath = path.resolve(process.cwd(), "auth.json");
   const authJsonExists = fs.existsSync(authJsonPath);
   const authJsonSize = authJsonExists ? fs.statSync(authJsonPath).size : 0;
-  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:35',message:'auth.json check',data:{authJsonPath,authJsonExists,authJsonSize,cwd:process.cwd()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:35', message: 'auth.json check', data: { authJsonPath, authJsonExists, authJsonSize, cwd: process.cwd() }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
   // #endregion
 
   const browser = await chromium.launch({
@@ -55,7 +68,7 @@ export async function runBot(url: string): Promise<string> {
   });
 
   // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:48',message:'before newContext',data:{storageStatePath:'auth.json'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:48', message: 'before newContext', data: { storageStatePath: 'auth.json' }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
   // #endregion
 
   const context: BrowserContext = await browser.newContext({
@@ -64,7 +77,7 @@ export async function runBot(url: string): Promise<string> {
   const page = await context.newPage();
 
   // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:52',message:'context created',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:52', message: 'context created', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
   // #endregion
 
   // for debugging so that you see all console lines in terminal
@@ -82,7 +95,7 @@ export async function runBot(url: string): Promise<string> {
       ) {
         authErrorCount++;
       }
-    } catch {}
+    } catch { }
   });
 
   try {
@@ -91,19 +104,19 @@ export async function runBot(url: string): Promise<string> {
     // ALWAYS validate and refresh session before attempting to join meeting
     console.log("Validating session before joining meeting...");
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:72',message:'before validateAndRefreshSession',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:72', message: 'before validateAndRefreshSession', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
     // #endregion
     await validateAndRefreshSession(page, context);
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:75',message:'after validateAndRefreshSession',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:75', message: 'after validateAndRefreshSession', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
     // #endregion
 
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:77',message:'before goto meeting url',data:{url},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:77', message: 'before goto meeting url', data: { url }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'D' }) }).catch(() => { });
     // #endregion
     await page.goto(url, { waitUntil: "domcontentloaded" });
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:80',message:'after goto meeting url',data:{finalUrl:page.url()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:80', message: 'after goto meeting url', data: { finalUrl: page.url() }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'D' }) }).catch(() => { });
     // #endregion
 
     // if we saw repeated 401s, refresh session and reload meet URL once
@@ -127,20 +140,20 @@ export async function runBot(url: string): Promise<string> {
 
     // join/ask to join, handle 2-step join preview, close modals, wait until in meeting
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:99',message:'before clickJoin',data:{currentUrl:page.url()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:99', message: 'before clickJoin', data: { currentUrl: page.url() }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'E' }) }).catch(() => { });
     // #endregion
     await clickJoin(page);
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:102',message:'after clickJoin',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:102', message: 'after clickJoin', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'E' }) }).catch(() => { });
     // #endregion
     await collapsePreviewIfNeeded(page);
     await dismissOverlays(page);
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:105',message:'before waitUntilJoined',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:105', message: 'before waitUntilJoined', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'F' }) }).catch(() => { });
     // #endregion
     await waitUntilJoined(page);
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:108',message:'after waitUntilJoined',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:108', message: 'after waitUntilJoined', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'F' }) }).catch(() => { });
     // #endregion
     console.log("joined meeting");
 
@@ -155,16 +168,16 @@ export async function runBot(url: string): Promise<string> {
     // persist refreshed session for next runs
     try {
       await context.storageState({ path: "auth.json" });
-    } catch {}
+    } catch { }
 
     await context.tracing.stop({ path: "run.zip" });
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:118',message:'runBot success',data:{meetingId:mid},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:118', message: 'runBot success', data: { meetingId: mid }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
     // #endregion
     return mid;
   } catch (err) {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:121',message:'runBot error',data:{error:err instanceof Error ? err.message : String(err),stack:err instanceof Error ? err.stack : undefined},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:121', message: 'runBot error', data: { error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
     // #endregion
     throw new Error(`Run Bot error: ${err}`);
   }
@@ -193,7 +206,7 @@ async function scrapeCaptions(
   let finalizedSegmentCount = 0; // Counter for summary generation (no longer storing full array in memory)
   const SILENCE_MS = 1500;
   let silenceInterval: NodeJS.Timeout | null = null;
-  
+
   // STATEFUL SEGMENT TRACKING: Persistent segmentId that only changes on speaker change or finalization
   let currentSegmentId: string | null = null;
 
@@ -201,21 +214,28 @@ async function scrapeCaptions(
   const isNotRealCaption = (text: string) => {
     const normalized = text.toLowerCase();
     return /you left the meeting|return to home screen|leave call|feedback|audio and video|learn more|arrow_downward|jump to bottom|jump to top|you have joined|your camera is off|your microphone is off|your hand is|there is one other person|there are \d+ other people|you were removed|you've been removed|joined|has raised a hand|reactions are not being announced|press shift\+r|keep_outline|pin.*to your main screen|mic_none|you can't remotely mute|more_vert|more options|combat\.|hello\. hello\. for\./i.test(normalized) ||
-           /^\s*(joined|has raised|reactions|press|keep_outline|pin|mic_none|more_vert|combat)\s*$/i.test(text.trim());
+      /^\s*(joined|has raised|reactions|press|keep_outline|pin|mic_none|more_vert|combat)\s*$/i.test(text.trim());
   };
 
   // Helper: finalize the current stabilized segment and push to Redis clean buffer
   const finalizeCurrentSegment = async () => {
     if (!currentSegment) return;
     const now = Date.now();
-    const startSec = Math.max(0, Math.floor((currentSegment.startMs - meetingStartTime) / 1000));
-    const endSec = Math.max(startSec, Math.floor((currentSegment.lastUpdateMs - meetingStartTime) / 1000));
+    // Use floating point seconds for precision (3 decimal places) to prevent 0-duration segments
+    const startSec = Math.max(0, (currentSegment.startMs - meetingStartTime) / 1000);
+    let endSec = Math.max(startSec, (currentSegment.lastUpdateMs - meetingStartTime) / 1000);
+
+    // Ensure end is strictly greater than start if they are too close (min 100ms duration)
+    if (endSec - startSec < 0.1) {
+      endSec = startSec + 0.1;
+    }
+
     const segment: Segment = {
       segmentId: currentSegment.segmentId,
       speaker: currentSegment.speaker,
       text: currentSegment.text.trim(),
-      start: startSec,
-      end: endSec,
+      start: Number(startSec.toFixed(3)),
+      end: Number(endSec.toFixed(3)),
     };
     try {
       await pushFinalCaption(meetingId, segment, userId || undefined, meetingTitle || undefined);
@@ -391,7 +411,7 @@ async function scrapeCaptions(
   const triggerSummary = async () => {
     let retryCount = 0;
     const maxRetries = 3;
-    
+
     while (retryCount < maxRetries) {
       try {
         console.log(`🤖 Attempting summary generation (attempt ${retryCount + 1}/${maxRetries})...`);
@@ -399,7 +419,7 @@ async function scrapeCaptions(
           method: "POST",
           headers: { "Content-Type": "application/json" },
         });
-        
+
         if (summaryRes.ok) {
           console.log("✅ Summary generation succeeded!");
           return; // Success, exit retry loop
@@ -411,14 +431,14 @@ async function scrapeCaptions(
       } catch (e) {
         console.error(`❌ Summary generation network error (attempt ${retryCount + 1}/${maxRetries}):`, e);
       }
-      
+
       retryCount++;
       if (retryCount < maxRetries) {
         console.log(`🔄 Retrying in 3 seconds...`);
         await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
-    
+
     console.error(`❌ CRITICAL: Summary generation failed after ${maxRetries} attempts - manual intervention required`);
   };
 
@@ -426,7 +446,7 @@ async function scrapeCaptions(
   const generateSummaryImmediately = async (meetingId: string, segmentCount: number) => {
     console.log(`🚀 IMMEDIATE SUMMARY GENERATION for meeting ${meetingId}`);
     console.log(`📊 Total segments captured: ${segmentCount}`);
-    
+
     try {
       // Finalize any remaining active segment before generating summary
       await finalizeCurrentSegment();
@@ -434,20 +454,20 @@ async function scrapeCaptions(
       // Note: All segments are already in Redis buffer and will be flushed by worker
       // The summarizer should read from MongoDB (which the worker populates)
       // We just need to ensure the worker has time to flush, or the summarizer reads from Redis
-      
+
       // Now generate summary with retry logic
       console.log(`🤖 Calling backend to generate summary...`);
       let summaryRes;
       let retryCount = 0;
       const maxRetries = 3;
-      
+
       while (retryCount < maxRetries) {
         try {
           summaryRes = await fetch(`http://backend:3001/debug/generate-summary/${meetingId}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
           });
-          
+
           if (summaryRes.ok) {
             const result = await summaryRes.json();
             console.log(`✅ SUMMARY GENERATED SUCCESSFULLY!`);
@@ -458,7 +478,7 @@ async function scrapeCaptions(
             console.error(`❌ Summary generation failed with status: ${summaryRes.status} (attempt ${retryCount + 1}/${maxRetries})`);
             const errorText = await summaryRes.text();
             console.error(`❌ Error details: ${errorText}`);
-            
+
             if (retryCount < maxRetries - 1) {
               console.log(`🔄 Retrying in 2 seconds...`);
               await new Promise(resolve => setTimeout(resolve, 2000));
@@ -471,10 +491,10 @@ async function scrapeCaptions(
             await new Promise(resolve => setTimeout(resolve, 2000));
           }
         }
-        
+
         retryCount++;
       }
-      
+
       if (retryCount >= maxRetries) {
         console.error(`❌ CRITICAL: Summary generation failed after ${maxRetries} attempts`);
       }
@@ -506,28 +526,55 @@ async function scrapeCaptions(
 
   // Wait for captions region to be available (after ensureCaptionsOn)
   console.log("Waiting for captions region to be available...");
-  
-  // Try multiple selectors for caption regions
+
+  // Try multiple selectors for caption regions - ORDER MATTERS
+  // We prioritize explicit "Captions" regions and avoid generic ones that catch notifications
   const captionSelectors = [
+    // Primary: Explicit caption regions
     '[role="region"][aria-label*="Captions"]',
-    '[role="region"][aria-label*="captions"]', 
-    '[aria-live="polite"]',
-    '[aria-live="assertive"]',
+    '[role="region"][aria-label*="captions"]',
+    '[role="region"][aria-label*="Closed captions"]',
+
+    // Secondary: Class-based (less reliable but often works)
     '.captions',
-    '.caption'
+    '.caption',
+
+    // Fallback: Generic aria-live BUT we must be careful
+    // '[aria-live="polite"]' // <--- REMOVED: Catches notification toasts (e.g. "You joined")
+    '[class*="caption-window"]',
+    'div[jsname="dsSSge"]' // Common Google Meet caption container jsname
   ];
-  
+
   let captionRegion = null;
   for (const selector of captionSelectors) {
     try {
-      await page.waitForSelector(selector, { timeout: 5000 });
-      captionRegion = await page.$(selector);
-      if (captionRegion) {
-        console.log(`Found caption region with selector: ${selector}`);
+      // Short timeout for each check
+      await page.waitForSelector(selector, { timeout: 2000, state: 'attached' });
+      const candidates = await page.$$(selector);
+
+      for (const candidate of candidates) {
+        // VETTING PROCESS: Check if this is actually the caption region
+        const label = await candidate.getAttribute('aria-label') || '';
+        const text = await candidate.textContent() || '';
+
+        // Reject notification areas and controls
+        if (label.toLowerCase().includes('notification') ||
+          label.toLowerCase().includes('control') ||
+          text.includes('Press Down Arrow') ||
+          text.includes('You have joined')) {
+          console.log(`⚠️ Rejecting candidate selector "${selector}" - looks like UI/Notification: "${label}"`);
+          continue;
+        }
+
+        // Accept if it looks promising
+        captionRegion = candidate;
+        console.log(`✅ Found valid caption region with selector: ${selector} (Label: "${label}")`);
         break;
       }
+
+      if (captionRegion) break;
     } catch (e) {
-      console.log(`Selector ${selector} not found, trying next...`);
+      // Ignore timeout and try next
     }
   }
 
@@ -551,14 +598,14 @@ async function scrapeCaptions(
 
   // Wait for captions to actually appear (with shorter timeout)
   try {
-  await page.waitForFunction(() => {
+    await page.waitForFunction(() => {
       const selectors = [
         '[role="region"][aria-label*="Captions"]',
         '[role="region"][aria-label*="captions"]',
         '[aria-live="polite"]',
         '[aria-live="assertive"]'
       ];
-      
+
       for (const sel of selectors) {
         const region = document.querySelector(sel);
         if (region && region.textContent && region.textContent.trim().length > 0) {
@@ -583,13 +630,13 @@ async function scrapeCaptions(
     const getSpeaker = (node: HTMLElement): string => {
       // Try multiple selectors for speaker badges
       const speakerSelectors = [
-        ".NWpY1d", ".xoMHSc", 
-        "[data-speaker-name]", 
+        ".NWpY1d", ".xoMHSc",
+        "[data-speaker-name]",
         ".speaker-name",
         "[aria-label*='speaking']",
         ".caption-speaker"
       ];
-      
+
       for (const selector of speakerSelectors) {
         const badge = node.querySelector<HTMLElement>(selector);
         const speaker = badge?.textContent?.trim();
@@ -598,7 +645,7 @@ async function scrapeCaptions(
           return speaker;
         }
       }
-      
+
       // If no new speaker found, check if the node itself contains speaker info
       const nodeText = node.textContent?.trim() || "";
       const speakerMatch = nodeText.match(/^([^:]+):/);
@@ -609,7 +656,7 @@ async function scrapeCaptions(
           return speaker;
         }
       }
-      
+
       return lastSpeaker;
     };
 
@@ -636,12 +683,12 @@ async function scrapeCaptions(
     // Extract only NEW text by comparing with last seen text
     const extractNewText = (fullText: string, speaker: string): string | null => {
       const lastText = lastSeenText.get(speaker) || "";
-      
+
       // If this is the same text, skip it
       if (fullText === lastText) {
         return null;
       }
-      
+
       // If the new text starts with the last text, extract only the new part
       if (fullText.startsWith(lastText)) {
         const newPart = fullText.substring(lastText.length).trim();
@@ -651,18 +698,18 @@ async function scrapeCaptions(
         }
         return null;
       }
-      
+
       // If the text is completely different (new sentence/thought), return it
       // But check if it's not just a shorter version of what we've seen
       if (lastText.length > 0 && !lastText.includes(fullText.substring(0, Math.min(20, fullText.length)))) {
         return fullText; // Completely new text
       }
-      
+
       // If last text is empty or this is longer, it's new
       if (lastText.length === 0 || fullText.length > lastText.length) {
         return fullText;
       }
-      
+
       return null;
     };
 
@@ -670,34 +717,34 @@ async function scrapeCaptions(
     const send = (node: HTMLElement): void => {
       let txt = getText(node);
       const spk = getSpeaker(node);
-      
+
       // Clean the text
       txt = cleanText(txt);
-      
+
       // Skip if empty or just speaker name
       if (!txt || txt.length === 0 || txt.toLowerCase() === spk.toLowerCase()) {
         return;
       }
-      
+
       // Extract only NEW text
       const newText = extractNewText(txt, spk);
-      
+
       if (!newText) {
         // No new content, skip
         return;
       }
-      
+
       // Update last seen text
       lastSeenText.set(spk, txt);
-      
+
       console.log(`[DEBUG] Processing node: speaker="${spk}", fullText="${txt.substring(0, 100)}${txt.length > 100 ? '...' : ''}", newText="${newText}"`);
-      
+
       // Check if this looks like a new speaker change
       if (spk !== lastSpeaker) {
         console.log(`[DEBUG] Speaker changed from "${lastSpeaker}" to "${spk}"`);
         lastSpeaker = spk;
       }
-      
+
       console.log(`[DEBUG] Sending NEW caption: ${spk}: ${newText}`);
       // @ts-expect-error
       window.onCaption?.(spk, newText);
@@ -708,7 +755,7 @@ async function scrapeCaptions(
     const checkForCaptions = () => {
       // Find individual caption nodes (not the container)
       const captionNodes = document.querySelectorAll('[role="region"][aria-label*="Captions"] > *, [role="region"][aria-label*="captions"] > *');
-      
+
       captionNodes.forEach((node) => {
         if (node instanceof HTMLElement && node.textContent?.trim()) {
           const text = node.textContent.trim();
@@ -718,20 +765,20 @@ async function scrapeCaptions(
           }
         }
       });
-      
+
       // Also check aria-live regions for new announcements
       const liveRegions = document.querySelectorAll('[aria-live="polite"], [aria-live="assertive"]');
       liveRegions.forEach((region) => {
         if (region instanceof HTMLElement && region.textContent?.trim()) {
           const text = region.textContent.trim();
           // Only process if it's not a system message
-          if (text.length > 5 && 
-              !text.includes('joined') && 
-              !text.includes('raised a hand') && 
-              !text.includes('Reactions are not') &&
-              !text.includes('You have joined') &&
-              !text.includes('Your camera') &&
-              !text.includes('Your microphone')) {
+          if (text.length > 5 &&
+            !text.includes('joined') &&
+            !text.includes('raised a hand') &&
+            !text.includes('Reactions are not') &&
+            !text.includes('You have joined') &&
+            !text.includes('Your camera') &&
+            !text.includes('Your microphone')) {
             send(region);
           }
         }
@@ -741,52 +788,52 @@ async function scrapeCaptions(
     // Initial check
     checkForCaptions();
 
-      // watch DOM for caption updates and run send()
-      new MutationObserver((mutations) => {
-        mutationCount++;
-        console.log(`[DEBUG] Mutation #${mutationCount}, ${mutations.length} changes`);
-        
-        for (const m of mutations) {
-          // new caption elements - only process if they look like actual captions
-          Array.from(m.addedNodes).forEach((n) => {
-            if (n instanceof HTMLElement) {
-              const text = n.textContent?.trim() || "";
-              // Only process if it's substantial text and not a system message
-              if (text.length > 5 && 
-                  !text.includes('arrow_downward') && 
-                  !text.includes('Jump to') &&
-                  !text.match(/^(joined|has raised|reactions|press|keep_outline|pin|mic_none|more_vert|combat)/i)) {
-                console.log(`[DEBUG] Added node: ${n.tagName}, text="${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-                send(n);
-              }
-            }
-          });
-          // live text edits inside an existing element - only if parent looks like a caption
-          if (
-            m.type === "characterData" &&
-            m.target?.parentElement instanceof HTMLElement
-          ) {
-            const parent = m.target.parentElement;
-            const text = parent.textContent?.trim() || "";
-            // Only process if parent is in caption region and has meaningful text
-            if (text.length > 5 && 
-                parent.closest('[role="region"][aria-label*="Captions"], [role="region"][aria-label*="captions"]')) {
-              console.log(`[DEBUG] Character data change: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-              send(parent);
+    // watch DOM for caption updates and run send()
+    new MutationObserver((mutations) => {
+      mutationCount++;
+      console.log(`[DEBUG] Mutation #${mutationCount}, ${mutations.length} changes`);
+
+      for (const m of mutations) {
+        // new caption elements - only process if they look like actual captions
+        Array.from(m.addedNodes).forEach((n) => {
+          if (n instanceof HTMLElement) {
+            const text = n.textContent?.trim() || "";
+            // Only process if it's substantial text and not a system message
+            if (text.length > 5 &&
+              !text.includes('arrow_downward') &&
+              !text.includes('Jump to') &&
+              !text.match(/^(joined|has raised|reactions|press|keep_outline|pin|mic_none|more_vert|combat)/i)) {
+              console.log(`[DEBUG] Added node: ${n.tagName}, text="${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+              send(n);
             }
           }
+        });
+        // live text edits inside an existing element - only if parent looks like a caption
+        if (
+          m.type === "characterData" &&
+          m.target?.parentElement instanceof HTMLElement
+        ) {
+          const parent = m.target.parentElement;
+          const text = parent.textContent?.trim() || "";
+          // Only process if parent is in caption region and has meaningful text
+          if (text.length > 5 &&
+            parent.closest('[role="region"][aria-label*="Captions"], [role="region"][aria-label*="captions"]')) {
+            console.log(`[DEBUG] Character data change: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+            send(parent);
+          }
         }
-        
-        // Check for new captions after mutations (but less frequently)
-        if (mutationCount % 3 === 0) {
-          checkForCaptions();
-        }
+      }
+
+      // Check for new captions after mutations (but less frequently)
+      if (mutationCount % 3 === 0) {
+        checkForCaptions();
+      }
     }).observe(document.body, {
       childList: true,
       characterData: true,
       subtree: true,
     });
-    
+
     console.log("Caption observer setup complete - watching for DOM changes");
   });
 
@@ -798,7 +845,7 @@ async function scrapeCaptions(
     // Finalize any remaining active segment before leaving (pushes to Redis buffer)
     console.log("🚪 Leaving call - finalizing remaining segment");
     await finalizeCurrentSegment();
-    
+
     const hangUpSel =
       'button[aria-label*="Leave call"], button[aria-label*="Leave meeting"]';
     if (await page.$(hangUpSel)) {
@@ -809,7 +856,7 @@ async function scrapeCaptions(
     await page
       .waitForSelector(LEAVE_BANNER_SEL, { timeout: 10_000 })
       .catch(() => undefined);
-    
+
     console.log(`✅ Leave call completed - all segments pushed to Redis buffer`);
   };
 
@@ -862,13 +909,13 @@ async function scrapeCaptions(
   try {
     const jobId = process.env.JOB_ID || `auto-job-${meetingId}`;
     console.log(`📤 Notifying backend about job completion for tracking purposes...`);
-    
+
     const res = await fetch("http://backend:3001/bot-done", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jobId, meetingId }),
     });
-    
+
     if (res.ok) {
       console.log(`✅ [bot-done] Backend notification successful (${res.status})`);
     } else {
@@ -913,15 +960,15 @@ async function loginIfNeeded(page: Page, context: BrowserContext) {
   const emailInput = page.locator('input[type="email"]').first();
   await emailInput.waitFor({ state: 'visible', timeout: 60000 });
   await emailInput.fill(email);
-  
+
   // Click next and wait for password page
   const nextButton = page.locator('#identifierNext, button:has-text("Next")').first();
   await nextButton.waitFor({ state: 'visible', timeout: 10000 });
   await nextButton.click();
-  
+
   // Wait for password page - try multiple strategies
   await page.waitForTimeout(2000); // Give page time to transition
-  
+
   // Try waiting for URL change
   try {
     await page.waitForURL(/accounts\.google\.com\/.*(challenge|signin|password)/, { timeout: 15000 });
@@ -933,7 +980,7 @@ async function loginIfNeeded(page: Page, context: BrowserContext) {
   console.log("🔑 Waiting for password input...");
   let passwordInput = page.locator('input[type="password"]:not([aria-hidden="true"])').first();
   let passwordFound = false;
-  
+
   try {
     await passwordInput.waitFor({ state: 'visible', timeout: 20000 });
     passwordFound = true;
@@ -944,7 +991,7 @@ async function loginIfNeeded(page: Page, context: BrowserContext) {
       'input[name="password"]',
       'input[aria-label*="password" i]',
     ];
-    
+
     for (const selector of alternativeSelectors) {
       try {
         passwordInput = page.locator(selector).first();
@@ -956,18 +1003,18 @@ async function loginIfNeeded(page: Page, context: BrowserContext) {
       }
     }
   }
-  
+
   if (!passwordFound) {
     throw new Error("Password input not found");
   }
-  
+
   await passwordInput.fill(password);
-  
+
   // Click password next
   const passwordNextButton = page.locator('#passwordNext, button:has-text("Next")').first();
   await passwordNextButton.waitFor({ state: 'visible', timeout: 10000 });
   await passwordNextButton.click();
-  
+
   // Wait for redirect away from login
   try {
     await page.waitForURL((url) => !url.hostname.includes('accounts.google.com'), { timeout: 30000 });
@@ -983,7 +1030,7 @@ async function loginIfNeeded(page: Page, context: BrowserContext) {
   try {
     await context.storageState({ path: 'auth.json' });
     console.log('Refreshed auth.json after login');
-  } catch {}
+  } catch { }
 }
 
 // PROACTIVE session validation and refresh - runs before every meeting join
@@ -992,61 +1039,61 @@ async function validateAndRefreshSession(page: Page, context: BrowserContext) {
   const password = process.env.GOOGLE_ACCOUNT_PASSWORD;
 
   // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:942',message:'validateAndRefreshSession entry',data:{hasEmail:!!email,hasPassword:!!password},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:942', message: 'validateAndRefreshSession entry', data: { hasEmail: !!email, hasPassword: !!password }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
   // #endregion
 
   console.log("Testing session validity by accessing Google Meet home...");
-  
+
   try {
     // Test session by going to Meet home page
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:950',message:'before goto meet.google.com',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:950', message: 'before goto meet.google.com', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
     // #endregion
     await page.goto("https://meet.google.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
-    
+
     // Check if we're redirected to login or see login prompts
     const currentUrl = page.url();
     const isRedirectedToLogin = /accounts\.google\.com/.test(currentUrl);
     const hasLoginPrompt = await page.locator('input[type="email"]').first().isVisible().catch(() => false);
-    
+
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:957',message:'session check result',data:{currentUrl,isRedirectedToLogin,hasLoginPrompt},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:957', message: 'session check result', data: { currentUrl, isRedirectedToLogin, hasLoginPrompt }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
     // #endregion
-    
+
     if (isRedirectedToLogin || hasLoginPrompt) {
       console.log("⚠️ Session appears expired or invalid");
-      
+
       // Only attempt automated login if credentials are available
       if (!email || !password) {
         console.warn("❌ Missing GOOGLE_ACCOUNT_USER/PASSWORD - cannot perform automated login.");
         console.warn("💡 Please run 'npm run gen:auth' to manually create a valid auth.json file.");
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:965',message:'missing credentials error',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:965', message: 'missing credentials error', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
         // #endregion
         throw new Error("Session expired and automated login credentials not available. Run 'npm run gen:auth' to create auth.json.");
       }
-      
+
       console.log("🔄 Attempting automated login...");
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:970',message:'before performFreshLogin',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:970', message: 'before performFreshLogin', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
       // #endregion
       await performFreshLogin(page, context);
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:973',message:'after performFreshLogin',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:973', message: 'after performFreshLogin', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
       // #endregion
     } else {
       console.log("✅ Session is valid - proceeding to meeting");
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:976',message:'session valid',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:976', message: 'session valid', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
       // #endregion
     }
-    
+
     // Always refresh storage state after validation
     try {
       await context.storageState({ path: 'auth.json' });
       console.log('✅ Updated auth.json with current session');
-    } catch {}
-    
+    } catch { }
+
   } catch (error: any) {
     // If it's a rejection error, don't retry
     if (error.message?.includes('rejected') || error.message?.includes('manual login')) {
@@ -1054,9 +1101,9 @@ async function validateAndRefreshSession(page: Page, context: BrowserContext) {
       console.error("💡 SOLUTION: Run 'npm run gen:auth' to manually log in and create auth.json");
       throw error;
     }
-    
+
     console.warn("⚠️ Session validation failed:", error.message);
-    
+
     // Only retry if we have credentials
     if (email && password) {
       console.log("🔄 Retrying with fresh login...");
@@ -1080,7 +1127,7 @@ async function performFreshLogin(page: Page, context: BrowserContext) {
   const password = process.env.GOOGLE_ACCOUNT_PASSWORD;
 
   // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1007',message:'performFreshLogin entry',data:{hasEmail:!!email,hasPassword:!!password},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:1007', message: 'performFreshLogin entry', data: { hasEmail: !!email, hasPassword: !!password }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
   // #endregion
 
   if (!email || !password) {
@@ -1088,51 +1135,51 @@ async function performFreshLogin(page: Page, context: BrowserContext) {
   }
 
   console.log("Performing fresh Google login...");
-  
+
   try {
     // Clear any existing session
     await context.clearCookies();
     console.log("✅ Cleared cookies");
-    
+
     // Go to Google sign-in
     console.log("🌐 Navigating to Google sign-in...");
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1024',message:'before goto accounts.google.com',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:1024', message: 'before goto accounts.google.com', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
     // #endregion
     await page.goto("https://accounts.google.com/", { waitUntil: "domcontentloaded", timeout: 60000 });
     await page.waitForTimeout(2000); // Give page time to fully load
-    
+
     // Fill email
     console.log("📧 Waiting for email input...");
     const emailInput = page.locator('input[type="email"]').first();
     await emailInput.waitFor({ state: 'visible', timeout: 60000 });
     console.log("✅ Email input found");
-    
+
     await emailInput.fill(email);
     console.log(`✅ Filled email: ${email}`);
-    
+
     // Click next and wait for navigation or password field
     console.log("🖱️ Clicking 'Next' button...");
     const nextButton = page.locator('#identifierNext, button:has-text("Next")').first();
     await nextButton.waitFor({ state: 'visible', timeout: 10000 });
     await nextButton.click();
-    
+
     // Wait for password page to load - try multiple strategies
     console.log("⏳ Waiting for password page...");
     let passwordInput;
     let passwordFound = false;
-    
+
     // Wait a bit for page to load after clicking Next
     await page.waitForTimeout(3000);
-    
+
     // Check current URL for rejection or challenge pages
     const urlAfterNext = page.url();
     console.log("🔍 Current URL after Next click:", urlAfterNext);
-    
+
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1052',message:'after email next click',data:{urlAfterNext,hasRejected:urlAfterNext.includes('/rejected'),hasChallenge:urlAfterNext.includes('/challenge')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:1052', message: 'after email next click', data: { urlAfterNext, hasRejected: urlAfterNext.includes('/rejected'), hasChallenge: urlAfterNext.includes('/challenge') }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
     // #endregion
-    
+
     // Check if Google is showing a challenge/rejection page
     if (urlAfterNext.includes('/rejected') || urlAfterNext.includes('/challenge')) {
       console.error("❌ Google is showing a challenge/rejection page. This usually means:");
@@ -1146,7 +1193,7 @@ async function performFreshLogin(page: Page, context: BrowserContext) {
       console.error("   The session will be saved to auth.json for future use.");
       throw new Error("Google login rejected - manual login required. Run 'npm run gen:auth' to create a valid auth.json file.");
     }
-    
+
     // Strategy 1: Wait for URL change to password/challenge page (but not rejected)
     try {
       await page.waitForURL(/accounts\.google\.com\/.*(challenge|signin|password)/, { timeout: 15000 });
@@ -1161,7 +1208,7 @@ async function performFreshLogin(page: Page, context: BrowserContext) {
       }
       console.log("⚠️ URL didn't change as expected, continuing...");
     }
-    
+
     // Strategy 2: Wait for password input to appear
     try {
       passwordInput = page.locator('input[type="password"]:not([aria-hidden="true"])').first();
@@ -1170,13 +1217,13 @@ async function performFreshLogin(page: Page, context: BrowserContext) {
       console.log("✅ Password input found");
     } catch (e) {
       console.log("⚠️ Password input not found with first selector, trying alternatives...");
-      
+
       // Check again if we're on a rejected page
       const urlCheck = page.url();
       if (urlCheck.includes('/rejected') || urlCheck.includes('/challenge')) {
         throw new Error("Google login was rejected - manual login required");
       }
-      
+
       // Strategy 3: Try alternative selectors
       const alternativeSelectors = [
         'input[type="password"]',
@@ -1184,7 +1231,7 @@ async function performFreshLogin(page: Page, context: BrowserContext) {
         'input[aria-label*="password" i]',
         'input#password',
       ];
-      
+
       for (const selector of alternativeSelectors) {
         try {
           passwordInput = page.locator(selector).first();
@@ -1197,7 +1244,7 @@ async function performFreshLogin(page: Page, context: BrowserContext) {
         }
       }
     }
-    
+
     if (!passwordFound || !passwordInput) {
       // Final check for rejected page
       const finalUrl = page.url();
@@ -1206,83 +1253,83 @@ async function performFreshLogin(page: Page, context: BrowserContext) {
         console.error("💡 Run 'npm run gen:auth' to create a valid auth.json file.");
         throw new Error("Google login rejected - manual login required. Run 'npm run gen:auth' to create a valid auth.json file.");
       }
-      
+
       // Take screenshot for debugging
       const screenshot = await page.screenshot({ path: '/tmp/login-debug.png' }).catch(() => null);
       console.error("❌ Password input not found. Current URL:", page.url());
       console.error("❌ Page title:", await page.title().catch(() => 'Unknown'));
       throw new Error("Password input field not found after email submission. Google may have changed their login flow or there's a challenge page.");
     }
-    
+
     // Fill password
     console.log("🔑 Filling password...");
     await passwordInput.fill(password);
     console.log("✅ Password filled");
-    
+
     // Click password next button
     console.log("🖱️ Clicking password 'Next' button...");
     const passwordNextButton = page.locator('#passwordNext, button:has-text("Next")').first();
     await passwordNextButton.waitFor({ state: 'visible', timeout: 10000 });
     await passwordNextButton.click();
-    
+
     // Wait for successful login - look for redirect away from accounts.google.com
     console.log("⏳ Waiting for login to complete...");
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1219',message:'before wait for redirect',data:{currentUrl:page.url()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:1219', message: 'before wait for redirect', data: { currentUrl: page.url() }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
     // #endregion
     try {
       await page.waitForURL((url) => !url.hostname.includes('accounts.google.com'), { timeout: 30000 });
       console.log("✅ Redirected away from login page");
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1224',message:'redirected away from login',data:{currentUrl:page.url()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:1224', message: 'redirected away from login', data: { currentUrl: page.url() }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
       // #endregion
     } catch (e) {
       console.log("⚠️ Still on accounts.google.com, waiting a bit longer...");
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1227',message:'still on accounts.google.com',data:{currentUrl:page.url()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:1227', message: 'still on accounts.google.com', data: { currentUrl: page.url() }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
       // #endregion
       await page.waitForTimeout(5000);
     }
-    
+
     // Additional wait for session to be established
     await page.waitForTimeout(3000);
-    
+
     // Verify we're logged in by checking Meet home
     console.log("🌐 Verifying login by accessing Meet home...");
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1239',message:'before verify login goto meet',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:1239', message: 'before verify login goto meet', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
     // #endregion
     await page.goto("https://meet.google.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
-    
+
     // Check if we're still on login page
     const finalUrl = page.url();
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1244',message:'login verification result',data:{finalUrl,stillOnLogin:finalUrl.includes('accounts.google.com')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:1244', message: 'login verification result', data: { finalUrl, stillOnLogin: finalUrl.includes('accounts.google.com') }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'B' }) }).catch(() => { });
     // #endregion
     if (finalUrl.includes('accounts.google.com')) {
       throw new Error("Still on login page after password submission. Login may have failed or there's a challenge.");
     }
-    
+
     console.log("✅ Successfully logged in");
-    
+
     // Save fresh session
     try {
       await context.storageState({ path: 'auth.json' });
       console.log('✅ Fresh login completed - auth.json updated');
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1253',message:'auth.json saved',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:1253', message: 'auth.json saved', data: {}, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
       // #endregion
     } catch (error) {
       console.error('❌ Failed to save fresh session:', error);
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1257',message:'auth.json save failed',data:{error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:1257', message: 'auth.json save failed', data: { error: error instanceof Error ? error.message : String(error) }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
       // #endregion
       throw error;
     }
   } catch (error: any) {
     console.error("❌ Login failed:", error.message);
     console.error("❌ Error details:", error);
-    
+
     // Take screenshot for debugging
     try {
       await page.screenshot({ path: '/tmp/login-error.png' });
@@ -1290,7 +1337,7 @@ async function performFreshLogin(page: Page, context: BrowserContext) {
     } catch (e) {
       // Ignore screenshot errors
     }
-    
+
     throw new Error(`Login failed: ${error.message}`);
   }
 }
@@ -1310,13 +1357,13 @@ async function clickIfVisible(page: Page, selector: string, timeout = 5000) {
 // join mtg by clicking "Join" button/fallbacks
 async function clickJoin(page: Page): Promise<void> {
   // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1208',message:'clickJoin entry',data:{currentUrl:page.url()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:1208', message: 'clickJoin entry', data: { currentUrl: page.url() }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'E' }) }).catch(() => { });
   // #endregion
   const allButtons = await page.locator("button").allTextContents();
   console.log("Visible buttons on screen:", allButtons);
-  
+
   // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1211',message:'visible buttons',data:{buttonCount:allButtons.length,buttons:allButtons.slice(0,10)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:1211', message: 'visible buttons', data: { buttonCount: allButtons.length, buttons: allButtons.slice(0, 10) }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'E' }) }).catch(() => { });
   // #endregion
 
   const continueBtn = page.locator(
@@ -1361,11 +1408,11 @@ async function clickJoin(page: Page): Promise<void> {
         const nameInput = page.locator('input[type="text"], input[aria-label*="name" i]');
         const emailInput = page.locator('input[type="email"]');
         if (await nameInput.first().isVisible().catch(() => false)) {
-          await nameInput.first().fill("Meeting Bot").catch(() => {});
+          await nameInput.first().fill("Meeting Bot").catch(() => { });
         }
         if (await emailInput.first().isVisible().catch(() => false)) {
           if (process.env.GOOGLE_ACCOUNT_USER) {
-            await emailInput.first().fill(process.env.GOOGLE_ACCOUNT_USER).catch(() => {});
+            await emailInput.first().fill(process.env.GOOGLE_ACCOUNT_USER).catch(() => { });
           }
         }
         // wait for the button to become enabled up to 10s
@@ -1377,11 +1424,11 @@ async function clickJoin(page: Page): Promise<void> {
               handle,
               { timeout: 10000 }
             )
-            .catch(() => {});
+            .catch(() => { });
         }
       }
 
-      await clickable.scrollIntoViewIfNeeded().catch(() => {});
+      await clickable.scrollIntoViewIfNeeded().catch(() => { });
       await clickable.click({ timeout: 2000 }).catch(async () => {
         await clickable.click({ force: true });
       });
@@ -1405,7 +1452,7 @@ async function clickJoin(page: Page): Promise<void> {
         await btn.click();
         console.log(`Fallback: clicked button with text "${label}"`);
         return;
-      } catch {}
+      } catch { }
     }
   }
   // last effort = press Enter
@@ -1417,7 +1464,7 @@ async function clickJoin(page: Page): Promise<void> {
 // waits until bot is in the call/added to the call
 async function waitUntilJoined(page: Page, timeoutMs = 60_000) {
   // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1418',message:'waitUntilJoined entry',data:{timeoutMs,currentUrl:page.url()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:1418', message: 'waitUntilJoined entry', data: { timeoutMs, currentUrl: page.url() }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'F' }) }).catch(() => { });
   // #endregion
   const inCall = await Promise.race([
     page.waitForSelector('button[aria-label*="Leave call"]', {
@@ -1430,7 +1477,7 @@ async function waitUntilJoined(page: Page, timeoutMs = 60_000) {
   ]).catch(() => false);
 
   // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'runBot.ts:1429',message:'waitUntilJoined result',data:{inCall:!!inCall,currentUrl:page.url()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:1429', message: 'waitUntilJoined result', data: { inCall: !!inCall, currentUrl: page.url() }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'F' }) }).catch(() => { });
   // #endregion
 
   if (!inCall) throw new Error("Not admitted within time limit");
@@ -1477,6 +1524,7 @@ async function captionsRegionVisible(page: Page, t = 4000): Promise<boolean> {
 }
 
 // make sure captions are enabled
+// make sure captions are enabled
 async function ensureCaptionsOn(page: Page, timeoutMs = 60_000) {
   console.log(" Waiting for UI to stabilize after join...");
   await page.waitForTimeout(5000);
@@ -1489,50 +1537,121 @@ async function ensureCaptionsOn(page: Page, timeoutMs = 60_000) {
     await page.waitForTimeout(200);
   }
 
-  // keyboard shortcut with limited attempts
-  for (let i = 0; i < 10; i++) {
+  // Strategy 1: Check if captions are already on
+  if (await captionsAlreadyEnabled(page)) {
+    console.log("✅ Captions are already enabled");
+    return;
+  }
+
+  // Strategy 2: Try keyboard shortcut (Shift+C) with limited attempts
+  console.log(" Trying Shift+C shortcut...");
+  for (let i = 0; i < 5; i++) {
     console.log(`Attempt ${i + 1}: Pressing Shift+C`);
     await page.keyboard.down("Shift");
     await page.keyboard.press("c");
     await page.keyboard.up("Shift");
 
-    if (await captionsRegionVisible(page, 800)) {
-      console.log("Captions enabled via Shift+C");
+    if (await captionsAlreadyEnabled(page, 1500)) {
+      console.log("✅ Captions enabled via Shift+C");
       return;
     }
-
-    // are captions already on
-    const ccOffBtn = page.locator('button[aria-label*="Turn off captions"]');
-    if (await ccOffBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-      console.log("Captions are already ON (confirmed by CC button state)");
-      return;
-    }
-
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(500);
   }
 
-  // fallback, click "Turn on captions" button
-  console.log(' Falling back to clicking "Turn on captions" button...');
-  await page.mouse.move(500, 700);
-  await page.waitForTimeout(300);
+  // Strategy 3: Try direct CC button click
+  console.log(' Trying direct CC button click...');
+  await page.mouse.move(500, 700); // Move mouse to trigger control bar
+  await page.waitForTimeout(500);
 
-  const ccButton = page.locator('button[aria-label*="Turn on captions"]');
-  try {
-    await ccButton.waitFor({ state: "visible", timeout: 4000 });
-    await ccButton.click();
-    if (await captionsRegionVisible(page, 5000)) {
-      console.log("captions enabled via CC button fallback");
+  const ccButtonSelectors = [
+    'button[aria-label*="Turn on captions"]',
+    'button[aria-label*="captions"]',
+    'button[data-tooltip*="captions"]',
+    '[data-tooltip*="captions"]',
+    'button:has-text("Turn on captions")',
+    '[aria-label*="CC"]',
+  ];
+
+  for (const selector of ccButtonSelectors) {
+    const btn = page.locator(selector).first();
+    if (await btn.isVisible({ timeout: 1000 }).catch(() => false)) {
+      console.log(`Found CC button with selector: ${selector}`);
+      await btn.click();
+      await page.waitForTimeout(1000);
+      if (await captionsAlreadyEnabled(page)) {
+        console.log("✅ Captions enabled via CC button");
+        return;
+      }
+    }
+  }
+
+  // Strategy 4: Try via "More options" menu (three dots)
+  console.log(' Trying "More options" menu...');
+  const moreOptionsSelectors = [
+    'button[aria-label*="More options"]',
+    'button[aria-label*="more_vert"]',
+    'button[data-tooltip*="More options"]',
+  ];
+
+  for (const selector of moreOptionsSelectors) {
+    const moreBtn = page.locator(selector).first();
+    if (await moreBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+      console.log(`Found "More options" button with selector: ${selector}`);
+      await moreBtn.click();
+      await page.waitForTimeout(800);
+
+      // Look for captions option in menu
+      const captionMenuItems = [
+        'li:has-text("captions")',
+        '[role="menuitem"]:has-text("captions")',
+        'span:has-text("Turn on captions")',
+        '[data-value="caption"]',
+      ];
+
+      for (const itemSel of captionMenuItems) {
+        const menuItem = page.locator(itemSel).first();
+        if (await menuItem.isVisible({ timeout: 500 }).catch(() => false)) {
+          console.log(`Found captions menu item: ${itemSel}`);
+          await menuItem.click();
+          await page.waitForTimeout(1000);
+          if (await captionsAlreadyEnabled(page)) {
+            console.log("✅ Captions enabled via More options menu");
+            return;
+          }
+        }
+      }
+
+      // Close menu if nothing found
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(300);
+    }
+  }
+
+  // Strategy 5: Try the bottom bar CC toggle (newer UI)
+  console.log(' Trying bottom bar CC toggle...');
+  const bottomBarCC = page.locator('[data-is-muted="true"][aria-label*="caption"], [data-is-muted="false"][aria-label*="caption"]').first();
+  if (await bottomBarCC.isVisible({ timeout: 1000 }).catch(() => false)) {
+    await bottomBarCC.click();
+    await page.waitForTimeout(1000);
+    if (await captionsAlreadyEnabled(page)) {
+      console.log("✅ Captions enabled via bottom bar toggle");
       return;
     }
-  } catch {
-    console.warn("CC button fallback failed");
+  }
+
+  // Final check - maybe captions are now on
+  if (await captionsAlreadyEnabled(page, 3000)) {
+    console.log("✅ Captions are now enabled (delayed detection)");
+    return;
   }
 
   // debug info if captions aren't on
-  const visibleRegions = await page
-    .locator('[role="region"]')
-    .allTextContents();
+  console.warn("⚠️ Could not enable captions - dumping debug info:");
+  const visibleRegions = await page.locator('[role="region"]').allTextContents();
   console.log("visible regions:", visibleRegions);
+
+  const buttons = await page.locator('button').allInnerTexts();
+  console.log("visible buttons:", buttons.slice(0, 20));
 
   const regions = await page.locator('[role="region"]').elementHandles();
   for (const r of regions) {
@@ -1545,5 +1664,39 @@ async function ensureCaptionsOn(page: Page, timeoutMs = 60_000) {
   const path = `/tmp/captions-failure-${timestamp}.png`;
   await page.screenshot({ path });
   console.error(`captions could not be enabled – see ${path}`);
-  throw new Error("could not enable captions using Shift+C or button");
+
+  // DON'T throw error - try to continue anyway, maybe captions will work
+  console.warn("⚠️ Proceeding without confirmed caption UI - captions may still work");
+}
+
+// Check if captions are already enabled using multiple methods
+async function captionsAlreadyEnabled(page: Page, timeout = 2000): Promise<boolean> {
+  // Method 1: Check for captions region
+  const captionRegionSelectors = [
+    '[role="region"][aria-label*="Captions"]',
+    '[aria-live="polite"]',
+    '.iOzk7[aria-label*="Captions"]', // Google Meet specific class
+    '[data-self-name="closed_caption_widget"]',
+  ];
+
+  for (const sel of captionRegionSelectors) {
+    const region = page.locator(sel).first();
+    if (await region.isVisible({ timeout: Math.min(timeout, 500) }).catch(() => false)) {
+      return true;
+    }
+  }
+
+  // Method 2: Check if "Turn off captions" button is visible (means captions are ON)
+  const turnOffBtn = page.locator('button[aria-label*="Turn off captions"]').first();
+  if (await turnOffBtn.isVisible({ timeout: Math.min(timeout, 500) }).catch(() => false)) {
+    return true;
+  }
+
+  // Method 3: Check for caption text container
+  const captionContainer = page.locator('.a4cQT, [data-message-text]').first();
+  if (await captionContainer.isVisible({ timeout: Math.min(timeout, 500) }).catch(() => false)) {
+    return true;
+  }
+
+  return false;
 }

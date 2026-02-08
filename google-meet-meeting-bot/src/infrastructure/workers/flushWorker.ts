@@ -1,6 +1,9 @@
 import { getRedisClient } from '../../config/redis';
-import { saveBatchToMongo, saveRawBatch } from '../mongo/transcriptRepo';
+import { saveBatchToMongo, saveRawBatch, getSegmentCountForMeeting } from '../mongo/transcriptRepo';
 import { CaptionData } from '../../application/transcription/captionBuffer';
+import { prisma } from '../../lib/prisma';
+import { MeetingStatus } from '../../config/constants';
+import { finalizeTranscript } from '../mongo/transcriptRepo';
 
 /**
  * Flush Worker (Consumer)
@@ -74,7 +77,7 @@ let flushScriptSha: string | null = null;
 async function acquireFlushLock(meetingId: string): Promise<boolean> {
   const redis = getRedisClient();
   const lockKey = `meeting:${meetingId}:flush_lock`;
-  
+
   // SET key value NX EX ttl - Set if not exists, with expiration
   const result = await redis.set(lockKey, '1', 'EX', FLUSH_LOCK_TTL, 'NX');
   return result === 'OK';
@@ -100,12 +103,12 @@ async function releaseFlushLock(meetingId: string): Promise<void> {
 async function pushToDeadLetterQueue(meetingId: string, items: string[]): Promise<void> {
   const redis = getRedisClient();
   const dlqKey = `meeting:${meetingId}:failed`;
-  
+
   if (items.length > 0) {
     const pipeline = redis.pipeline();
     items.forEach(item => pipeline.rpush(dlqKey, item));
     await pipeline.exec();
-    
+
     console.error(
       `[FlushWorker] 🚨 Pushed ${items.length} failed items to DLQ for meeting ${meetingId} ` +
       `(key: ${dlqKey})`
@@ -174,7 +177,7 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
     // CRITICAL: Use LTRIM instead of DEL to prevent race conditions
     let items: string[] = [];
     const itemsToRead = Math.min(currentBufferLength, 1000); // Read up to 1000 items at a time
-    
+
     try {
       if (flushScriptSha) {
         // Use cached script SHA for efficiency
@@ -213,9 +216,9 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
       multi.lrange(bufferKey, 0, itemsToRead - 1);
       multi.ltrim(bufferKey, itemsToRead, -1); // Use LTRIM instead of DEL
       const results = await multi.exec();
-      
+
       if (results && results[0] && results[0][1]) {
-        items = Array.isArray(results[0][1]) 
+        items = Array.isArray(results[0][1])
           ? (results[0][1] as string[]).map(String)
           : [];
       }
@@ -246,8 +249,8 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
     // Extract segments and metadata
     const segments = captionData.map((data) => data.segment);
     const firstCaption = captionData[0];
-    const createdAt = firstCaption.timestamp 
-      ? new Date(firstCaption.timestamp) 
+    const createdAt = firstCaption.timestamp
+      ? new Date(firstCaption.timestamp)
       : new Date();
 
     // CRITICAL: Dead Letter Queue handling
@@ -257,8 +260,8 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
       // Publish Redis Pub/Sub event FIRST - dashboard gets real-time updates before MongoDB persistence
       // This allows dashboard to show transcripts live as meeting happens
       try {
-        const payload = JSON.stringify({ 
-          meetingId, 
+        const payload = JSON.stringify({
+          meetingId,
           segments,
           userId: firstCaption.userId,
           meetingTitle: firstCaption.meetingTitle
@@ -289,6 +292,19 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
         `for meeting ${meetingId}`
       );
 
+      // Sync segment count to PostgreSQL for list display
+      try {
+        const segmentCount = await getSegmentCountForMeeting(meetingId);
+        await prisma.meeting.updateMany({
+          where: { mongoTranscriptId: meetingId },
+          data: { segmentCount }
+        });
+        console.log(`[FlushWorker] ✅ Synced segmentCount=${segmentCount} to PostgreSQL for ${meetingId}`);
+      } catch (syncError) {
+        // Non-fatal: PostgreSQL sync failure shouldn't block flush
+        console.warn(`[FlushWorker] ⚠️ Failed to sync segmentCount to PostgreSQL:`, syncError);
+      }
+
       cleanFlushed = true;
     } catch (mongoError) {
       // CRITICAL: Push failed items to Dead Letter Queue
@@ -297,10 +313,10 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
         `Pushing ${items.length} items to DLQ.`,
         mongoError
       );
-      
+
       // Push original string items to DLQ (before parsing)
       await pushToDeadLetterQueue(meetingId, items);
-      
+
       // Re-throw to be caught by outer catch
       throw mongoError;
     }
@@ -397,15 +413,40 @@ async function cleanupStaleMeetings(): Promise<void> {
 
       // Check if buffer is empty
       const bufferLength = await redis.llen(bufferKey);
-      
+
       if (bufferLength === 0) {
         // Check last active time
         const lastActiveStr = await redis.get(lastActiveKey);
         const lastActive = lastActiveStr ? parseInt(lastActiveStr, 10) : null;
-        
+
+        // CRITICAL CHECK: If meeting is explicitly COMPLETED in Postgres, finalize it immediately
+        // This bridges the gap between Meeting Lifecycle (Postgres) and Data Persistence (Mongo)
+        try {
+          const meeting = await prisma.meeting.findUnique({
+            where: { id: meetingId },
+            select: { status: true }
+          });
+
+          if (meeting?.status === MeetingStatus.COMPLETED) {
+            console.log(`[FlushWorker] 🏁 Meeting ${meetingId} is COMPLETED in DB. Finalizing transcript...`);
+            const finalized = await finalizeTranscript(meetingId);
+            if (finalized) {
+              console.log(`[FlushWorker] ✅ Meeting ${meetingId} finalized. Removing from active set.`);
+              await redis.srem(ACTIVE_MEETINGS_KEY, meetingId);
+              // Also clean up the last_active key to keep Redis clean
+              await redis.del(lastActiveKey);
+              cleanedCount++;
+              continue; // Done with this meeting
+            }
+          }
+        } catch (dbError) {
+          console.error(`[FlushWorker] ⚠️ Error checking status for ${meetingId}:`, dbError);
+          // Continue to normal stale check if DB check fails
+        }
+
         if (lastActive) {
           const timeSinceLastActive = now - lastActive;
-          
+
           // Remove if stale (idle for more than cleanup threshold)
           if (timeSinceLastActive > CLEANUP_THRESHOLD_MS) {
             await redis.srem(ACTIVE_MEETINGS_KEY, meetingId);
@@ -459,7 +500,7 @@ async function processActiveMeetings(): Promise<void> {
     // Process each meeting
     const flushPromises = activeMeetingIds.map(async (meetingId) => {
       const wasFlushed = await flushMeetingBuffer(meetingId);
-      
+
       // Note: Stale meeting cleanup is now handled separately in cleanupStaleMeetings()
       // This keeps the logic cleaner and allows for better control
     });
@@ -518,7 +559,7 @@ export async function startFlushWorker(): Promise<void> {
   while (running) {
     try {
       await processActiveMeetings();
-      
+
       // Run stale meeting cleanup every 10 iterations (to avoid overhead)
       iterationCount++;
       if (iterationCount % 10 === 0) {
@@ -540,7 +581,7 @@ if (typeof require !== 'undefined' && require.main === module) {
   // Initialize MongoDB connection before starting worker
   (async () => {
     try {
-      const { initMongoConnection } = await import('./mongoLayer');
+      const { initMongoConnection } = await import('../mongo/transcriptRepo');
       await initMongoConnection();
       await startFlushWorker();
     } catch (error) {

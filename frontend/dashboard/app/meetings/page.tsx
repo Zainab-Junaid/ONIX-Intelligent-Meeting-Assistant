@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { io, Socket } from 'socket.io-client'
 import { AppShell } from "@/components/app-shell"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/components/auth-provider"
@@ -8,7 +9,7 @@ import MeetingUrlPopup from "@/components/meeting-url-popup"
 import { useBotMeetings } from "@/hooks/use-bot-meetings"
 import { useExtensionMeetings } from "@/hooks/use-extension-meetings"
 import { useCalendarEvents } from "@/hooks/use-calendar-events"
-import { Calendar, MapPin, Users, Video, ExternalLink, Clock } from "lucide-react"
+import { Calendar, MapPin, Users, Video, ExternalLink, Clock, BarChart3 } from "lucide-react"
 import Link from "next/link"
 
 type MeetingDoc = {
@@ -23,20 +24,84 @@ type MeetingDoc = {
 export default function Page() {
   const { authUser, isLoading, hasCalendarAccess } = useAuth()
   const [showBotPopup, setShowBotPopup] = useState(false)
-  
+
   // Bot meetings hook
   const { meetings: botMeetings, summaries: botSummaries, loading: botLoading, refetch: refetchBotMeetings } = useBotMeetings()
-  
+
   // Extension meetings hook
   const { meetings: extensionMeetings, loading: extensionLoading, refetch: refetchExtensionMeetings } = useExtensionMeetings()
-  
+
   // Calendar events hook
   const { events: calendarEvents, loading: calendarLoading, error: calendarError, refetch: refetchCalendar } = useCalendarEvents()
-  
+
+  // Real-time Socket.IO connection for live caption updates
+  const socketRef = useRef<Socket | null>(null)
+  const [liveUpdates, setLiveUpdates] = useState<Map<string, number>>(new Map()) // meetingId → segmentCount
+
   // Debug logging
   console.log('Bot meetings:', botMeetings);
   console.log('Bot summaries:', botSummaries);
   console.log('Extension meetings:', extensionMeetings);
+
+  // Set up real-time Socket.IO connection for all bot meetings
+  useEffect(() => {
+    if (botMeetings.length === 0) return
+
+    // Connect to Socket.IO backend
+    const socket = io(process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001', {
+      transports: ['websocket', 'polling'],
+    })
+
+    socketRef.current = socket
+
+    socket.on('connect', () => {
+      console.log('[Meetings] ✅ Connected to Socket.IO for real-time updates')
+
+      // Join rooms for ALL bot meetings to receive live updates
+      botMeetings.forEach(meeting => {
+        socket.emit('join_meeting', meeting.meetingId)
+        console.log(`[Meetings] 📡 Joined room for meeting: ${meeting.meetingId}`)
+      })
+    })
+
+    // Listen for real-time transcript updates
+    socket.on('transcript_update', (data: { meetingId: string; segments: any[] }) => {
+      console.log(`[Meetings] 📝 Live update for ${data.meetingId}: ${data.segments.length} segments`)
+
+      // Update live segment count for this meeting
+      setLiveUpdates(prev => {
+        const updated = new Map(prev)
+        const existingCount = updated.get(data.meetingId) || 0
+        // Only update if new count is higher (prevents decreasing count)
+        if (data.segments.length > existingCount) {
+          updated.set(data.meetingId, data.segments.length)
+        }
+        return updated
+      })
+
+      // Trigger refetch to update meeting list with latest data
+      refetchBotMeetings()
+    })
+
+    socket.on('disconnect', () => {
+      console.log('[Meetings] ❌ Disconnected from Socket.IO')
+    })
+
+    socket.on('connect_error', (error) => {
+      console.error('[Meetings] ❌ Socket.IO connection error:', error)
+    })
+
+    // Cleanup on unmount or when meetings change
+    return () => {
+      if (socketRef.current) {
+        botMeetings.forEach(meeting => {
+          socketRef.current?.emit('leave_meeting', meeting.meetingId)
+        })
+        socketRef.current.disconnect()
+        socketRef.current = null
+      }
+    }
+  }, [botMeetings, refetchBotMeetings])
 
   function handleStartMeeting() {
     window.postMessage({ type: 'ONIX_START_MEETING' }, '*')
@@ -58,8 +123,8 @@ export default function Page() {
   if (!authUser) return <div className="p-6">Please sign in to view your meetings.</div>
 
   return (
-    <AppShell 
-      title="Meetings" 
+    <AppShell
+      title="Meetings"
       actions={
         <div className="flex gap-2">
           <Button onClick={handleStartBotMeeting} variant="outline">
@@ -80,8 +145,8 @@ export default function Page() {
               Scheduled Meetings
             </h3>
             {hasCalendarAccess && (
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 size="sm"
                 onClick={() => refetchCalendar()}
                 disabled={calendarLoading}
@@ -90,7 +155,7 @@ export default function Page() {
               </Button>
             )}
           </div>
-          
+
           {!hasCalendarAccess ? (
             <div className="rounded-lg border p-4 bg-muted/30">
               <p className="text-sm text-muted-foreground mb-3">
@@ -105,10 +170,10 @@ export default function Page() {
           ) : calendarError ? (
             <div className="rounded-lg border p-4 bg-red-50 border-red-200">
               <p className="text-sm text-red-700">{calendarError}</p>
-              <Button 
-                asChild 
-                variant="outline" 
-                size="sm" 
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
                 className="mt-2"
               >
                 <Link href="/settings">Go to Settings</Link>
@@ -119,31 +184,31 @@ export default function Page() {
           ) : (
             <div className="grid gap-3">
               {calendarEvents.map((event) => {
-                const startDate = event.start.dateTime 
+                const startDate = event.start.dateTime
                   ? new Date(event.start.dateTime)
-                  : event.start.date 
-                  ? new Date(event.start.date)
-                  : null
-                
-                const endDate = event.end.dateTime 
+                  : event.start.date
+                    ? new Date(event.start.date)
+                    : null
+
+                const endDate = event.end.dateTime
                   ? new Date(event.end.dateTime)
-                  : event.end.date 
-                  ? new Date(event.end.date)
-                  : null
+                  : event.end.date
+                    ? new Date(event.end.date)
+                    : null
 
                 const isAllDay = !event.start.dateTime && event.start.date
                 const isPast = startDate && startDate < new Date()
-                const isToday = startDate && 
+                const isToday = startDate &&
                   startDate.toDateString() === new Date().toDateString()
 
                 // Extract Google Meet URL
                 const meetUrl =
-  event.conferenceData?.entryPoints?.find(
-    (ep) => ep.entryPointType === "video"
-  )?.uri ||
-  event.description?.match(/https?:\/\/meet\.google\.com\/[a-z-]+/i)?.[0] ||
-  event.location?.match(/https?:\/\/meet\.google\.com\/[a-z-]+/i)?.[0] ||
-  null;
+                  event.conferenceData?.entryPoints?.find(
+                    (ep) => ep.entryPointType === "video"
+                  )?.uri ||
+                  event.description?.match(/https?:\/\/meet\.google\.com\/[a-z-]+/i)?.[0] ||
+                  event.location?.match(/https?:\/\/meet\.google\.com\/[a-z-]+/i)?.[0] ||
+                  null;
 
 
                 const cardClassName = [
@@ -153,8 +218,8 @@ export default function Page() {
                 ].filter(Boolean).join(' ')
 
                 return (
-                  <div 
-                    key={event.id} 
+                  <div
+                    key={event.id}
                     className={cardClassName}
                   >
                     <div className="flex items-start justify-between gap-4">
@@ -169,46 +234,46 @@ export default function Page() {
                             </span>
                           )}
                         </div>
-                        
+
                         <div className="space-y-1.5 mt-2">
                           {startDate && (
                             <div className="flex items-center gap-2 text-sm text-muted-foreground">
                               <Clock className="h-4 w-4 flex-shrink-0" />
                               <span>
-                                {isAllDay 
+                                {isAllDay
                                   ? startDate.toLocaleDateString('en-US', {
-                                      weekday: 'short',
-                                      month: 'short',
-                                      day: 'numeric',
-                                      year: startDate.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
-                                    })
+                                    weekday: 'short',
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: startDate.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+                                  })
                                   : startDate.toLocaleString('en-US', {
-                                      weekday: 'short',
-                                      month: 'short',
-                                      day: 'numeric',
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                      hour12: true
-                                    })
+                                    weekday: 'short',
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    hour12: true
+                                  })
                                 }
                                 {endDate && !isAllDay && (
                                   <> - {endDate.toLocaleTimeString('en-US', {
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                      hour12: true
-                                    })}</>
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    hour12: true
+                                  })}</>
                                 )}
                               </span>
                             </div>
                           )}
-                          
+
                           {event.location && (
                             <div className="flex items-center gap-2 text-sm text-muted-foreground">
                               <MapPin className="h-4 w-4 flex-shrink-0" />
                               <span className="truncate">{event.location}</span>
                             </div>
                           )}
-                          
+
                           {event.attendees && event.attendees.length > 0 && (
                             <div className="flex items-center gap-2 text-sm text-muted-foreground">
                               <Users className="h-4 w-4 flex-shrink-0" />
@@ -217,13 +282,13 @@ export default function Page() {
                               </span>
                             </div>
                           )}
-                          
+
                           {meetUrl && (
                             <div className="flex items-center gap-2">
                               <Video className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                              <a 
-                                href={meetUrl} 
-                                target="_blank" 
+                              <a
+                                href={meetUrl}
+                                target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-sm text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1"
                               >
@@ -234,7 +299,7 @@ export default function Page() {
                           )}
                         </div>
                       </div>
-                      
+
                       {event.htmlLink && (
                         <Button
                           variant="ghost"
@@ -242,9 +307,9 @@ export default function Page() {
                           asChild
                           className="flex-shrink-0"
                         >
-                          <a 
-                            href={event.htmlLink} 
-                            target="_blank" 
+                          <a
+                            href={event.htmlLink}
+                            target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center gap-1"
                           >
@@ -253,7 +318,7 @@ export default function Page() {
                         </Button>
                       )}
                     </div>
-                    
+
                     {event.description && (
                       <div className="mt-3 pt-3 border-t text-sm text-muted-foreground line-clamp-2">
                         {event.description.replace(/<[^>]*>/g, '').substring(0, 150)}
@@ -323,39 +388,50 @@ export default function Page() {
                         const epochMs = typeof raw === 'string' ? Number(raw) : raw;
                         const d = new Date(typeof epochMs === 'number' && !Number.isNaN(epochMs) ? epochMs : raw);
                         return d.toLocaleString('en-US', {
-                        timeZone: 'Asia/Karachi', // Pakistan/Islamabad timezone
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        hour12: true
+                          timeZone: 'Asia/Karachi', // Pakistan/Islamabad timezone
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true
                         })
                       })()}
                     </div>
                   </div>
-                  
+
                   <div className="mt-2 space-y-2">
-                    <div className="text-sm text-muted-foreground">
-                      📝 {meeting.segments?.length || 0} segments • 
-                      👥 {meeting.segments ? [...new Set(meeting.segments.map(s => s.speaker))].length : 0} speakers • 
-                      ⏱️ {(() => {
-                        const createdAtMs = Number(((meeting as any).createdAtMs ?? (meeting as any).createdAt) || 0);
-                        const summaryForMeeting = summary ? new Date(summary.generatedAt).getTime() : undefined;
-                        // Prefer summary time (meeting end) when available; fallback to at least 1 minute if start exists
-                        const endMs = summaryForMeeting && isFinite(summaryForMeeting) ? summaryForMeeting : createdAtMs;
-                        const mins = createdAtMs && endMs && endMs >= createdAtMs ? Math.max(1, Math.round((endMs - createdAtMs) / 60000)) : 0;
-                        return mins;
-                      })()} min
+                    <div className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
+                      <span>
+                        📝 {liveUpdates.get(meeting.meetingId) || meeting.segments?.length || 0} segments
+                        {liveUpdates.has(meeting.meetingId) && (
+                          <span className="ml-1.5 text-green-600 font-medium">● Live</span>
+                        )}
+                      </span>
+                      <span>•</span>
+                      <span>
+                        👥 {meeting.segments ? [...new Set(meeting.segments.map(s => s.speaker))].length : 0} speakers
+                      </span>
+                      <span>•</span>
+                      <span>
+                        ⏱️ {(() => {
+                          const createdAtMs = Number(((meeting as any).createdAtMs ?? (meeting as any).createdAt) || 0);
+                          const summaryForMeeting = summary ? new Date(summary.generatedAt).getTime() : undefined;
+                          // Prefer summary time (meeting end) when available; fallback to at least 1 minute if start exists
+                          const endMs = summaryForMeeting && isFinite(summaryForMeeting) ? summaryForMeeting : createdAtMs;
+                          const mins = createdAtMs && endMs && endMs >= createdAtMs ? Math.max(1, Math.round((endMs - createdAtMs) / 60000)) : 0;
+                          return mins;
+                        })()} min
+                      </span>
                     </div>
-                    
+
                     {summary && (
                       <div className="text-sm text-green-700 bg-green-50 p-2 rounded">
                         <strong>AI Summary:</strong> {summary.summaryText.substring(0, 100)}...
                       </div>
                     )}
-                    
-                    <div className="flex gap-2 mt-2">
+
+                    <div className="flex flex-wrap gap-2 mt-2">
                       <Button size="sm" variant="outline" asChild>
                         <a href={`/transcripts?botId=${meeting.meetingId}`}>View Transcript</a>
                       </Button>
@@ -368,6 +444,15 @@ export default function Page() {
                             <a href={`/tasks?botId=${meeting.meetingId}`}>View Action Items</a>
                           </Button>
                         </>
+                      )}
+                      {/* Analytics button - show for completed/processed meetings */}
+                      {(meeting.status === 'COMPLETED' || meeting.status === 'PROCESSED' || meeting.status === 'completed' || meeting.status === 'processed' || summary) && (
+                        <Button size="sm" variant="outline" asChild className="bg-blue-50 hover:bg-blue-100 border-blue-200">
+                          <a href={`/meetings/${meeting.meetingId}/analytics`} className="flex items-center gap-1">
+                            <BarChart3 className="h-3.5 w-3.5" />
+                            View Analytics
+                          </a>
+                        </Button>
                       )}
                     </div>
                   </div>
@@ -382,8 +467,8 @@ export default function Page() {
       </div>
 
       {/* Meeting URL Popup */}
-      <MeetingUrlPopup 
-        isOpen={showBotPopup} 
+      <MeetingUrlPopup
+        isOpen={showBotPopup}
         onClose={() => setShowBotPopup(false)}
         onSuccess={handleBotSuccess}
       />

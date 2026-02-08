@@ -1,10 +1,11 @@
 import { Server as HttpServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
 import Redis from 'ioredis';
 import { Segment } from '../../domain/transcription/models';
 
 /**
- * Socket Server with Redis Pub/Sub Integration
+ * Socket Server with Redis Pub/Sub Integration + Redis Adapter for Multi-Instance Support
  * 
  * This module bridges the gap between the flushWorker (separate process) and the frontend Dashboard.
  * 
@@ -13,6 +14,11 @@ import { Segment } from '../../domain/transcription/models';
  * 2. This server subscribes to that Redis channel
  * 3. When a message is received, it broadcasts to the appropriate Socket.IO room
  * 4. Frontend clients join rooms by meetingId to receive real-time updates
+ * 
+ * Multi-Instance Scalability:
+ * - Uses Redis adapter to sync Socket.IO state across multiple backend instances
+ * - Clients can connect to any instance and receive events from any other instance
+ * - Rooms are shared via Redis pub/sub
  * 
  * IMPORTANT: Redis requires a dedicated connection for subscriptions (SUBSCRIBE command).
  * This connection cannot be used for regular Redis commands.
@@ -58,6 +64,23 @@ export function initializeSocketServer(httpServer: HttpServer): void {
 
   console.log('[Socket] ✅ Socket.IO server initialized');
 
+  // Configure Redis Adapter for multi-instance scaling
+  // This allows multiple backend instances to share Socket.IO rooms via Redis pub/sub
+  try {
+    const pubClient = new Redis(REDIS_URL, {
+      password: REDIS_PASSWORD,
+      maxRetriesPerRequest: null, // Required for adapter mode
+    });
+
+    const subClient = pubClient.duplicate();
+
+    io.adapter(createAdapter(pubClient, subClient));
+    console.log('[Socket] ✅ Redis adapter configured for multi-instance support');
+  } catch (adapterError) {
+    console.error('[Socket] ❌ Failed to configure Redis adapter:', adapterError);
+    console.warn('[Socket] ⚠️ Running in single-instance mode (no horizontal scaling)');
+  }
+
   // Handle client connections
   io.on('connection', (socket) => {
     console.log(`[Socket] ✅ Client connected: ${socket.id}`);
@@ -71,7 +94,7 @@ export function initializeSocketServer(httpServer: HttpServer): void {
 
       socket.join(meetingId);
       console.log(`[Socket] User ${socket.id} joined meeting: ${meetingId}`);
-      
+
       // Acknowledge join
       socket.emit('joined_meeting', { meetingId });
     });

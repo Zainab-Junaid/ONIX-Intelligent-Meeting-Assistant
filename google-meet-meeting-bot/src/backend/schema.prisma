@@ -299,8 +299,13 @@ model MeetingJob {
     updatedAt    DateTime @updatedAt
 }
 
-// Legacy MeetingTranscript - kept for backward compatibility
-// Primary storage is now MongoDB, but Prisma models exist for debug endpoints
+// ⚠️ DEPRECATED - DO NOT USE FOR NEW CODE
+// ===========================================
+// This table is LEGACY. Transcript data lives in MongoDB.
+// New features must NOT write to this table.
+// MongoDB is the source of truth for all transcript segments.
+// This model exists only for backward compatibility with debug endpoints.
+// ===========================================
 model MeetingTranscript {
     id          String    @id @default(uuid())
     meetingId   String    @unique
@@ -310,6 +315,13 @@ model MeetingTranscript {
     segments    Segment[]
 }
 
+// ⚠️ DEPRECATED - DO NOT USE FOR NEW CODE  
+// ===========================================
+// This table is LEGACY. Raw caption segments live in MongoDB.
+// New features must NOT write to this table.
+// MongoDB owns transcript persistence via flushWorker.
+// This model exists only for backward compatibility.
+// ===========================================
 model Segment {
     id                String            @id @default(uuid())
     meetingId         String
@@ -320,3 +332,4 @@ model Segment {
     speaker           String
     @@unique([meetingId, start])
 }
+

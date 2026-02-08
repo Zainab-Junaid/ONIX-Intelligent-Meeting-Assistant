@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',   // ✅ add this line for static export
+  // NOTE: 'output: export' removed - it breaks ALL API routes
+  // API routes are used to proxy to backend (avoids CORS issues)
 
   eslint: {
     ignoreDuringBuilds: true,

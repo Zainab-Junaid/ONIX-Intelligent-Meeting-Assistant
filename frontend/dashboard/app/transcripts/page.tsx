@@ -27,13 +27,13 @@ export default function Page() {
   const meetingId = searchParams.get('id')
   const botId = searchParams.get('botId')
   const extensionId = searchParams.get('extensionId')
-  
+
   // Bot meetings hook
   const { meetings: botMeetings, loading: botLoading } = useBotMeetings()
-  
+
   // Extension meetings hook
   const { meetings: extensionMeetings, loading: extensionLoading } = useExtensionMeetings()
-  
+
   // Debug logging
   console.log('Transcripts - Bot meetings:', botMeetings);
   console.log('Transcripts - Extension meetings:', extensionMeetings);
@@ -96,13 +96,13 @@ export default function Page() {
         // Update segments with new data (merge with existing to avoid duplicates)
         setSegments(prevSegments => {
           const segmentMap = new Map<string, any>()
-          
+
           // Add existing segments to map
           prevSegments.forEach(seg => {
             const key = seg.start !== undefined ? `${seg.start}-${seg.speaker}` : seg.text.substring(0, 50)
             segmentMap.set(key, seg)
           })
-          
+
           // Add/update with new segments
           data.segments.forEach(seg => {
             const key = seg.start !== undefined ? `${seg.start}-${seg.speaker}` : seg.text.substring(0, 50)
@@ -111,7 +111,7 @@ export default function Page() {
               segmentMap.set(key, seg)
             }
           })
-          
+
           return Array.from(segmentMap.values()).sort((a, b) => {
             if (a.start !== undefined && b.start !== undefined) return a.start - b.start
             return 0
@@ -144,8 +144,22 @@ export default function Page() {
     const botMeeting = botMeetings.find(m => m.meetingId === botId)
     if (!botMeeting) return
 
-    // Initialize with existing segments
-    setLiveSegments(botMeeting.segments || [])
+    // Fetch transcript from MongoDB (segments are not included in listing for efficiency)
+    const fetchTranscript = async () => {
+      try {
+        const res = await fetch(`/api/meeting-bot/transcript/${botId}`)
+        if (res.ok) {
+          const transcript = await res.json()
+          if (transcript.segments && transcript.segments.length > 0) {
+            console.log('📝 Loaded', transcript.segments.length, 'segments from MongoDB')
+            setLiveSegments(transcript.segments)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch transcript:', err)
+      }
+    }
+    fetchTranscript()
 
     // Connect to Socket.IO for real-time updates
     const socket = io(process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001', {
@@ -199,7 +213,7 @@ export default function Page() {
   if (extensionId) {
     const extensionMeeting = extensionMeetings.find(m => m.id === extensionId)
     if (!extensionMeeting) return <div className="p-6">Extension meeting not found.</div>
-    
+
     return (
       <AppShell title={extensionMeeting.title} subtitle={`Created ${extensionMeeting.createdAt?.toLocaleString('en-US', {
         timeZone: 'Asia/Karachi',
@@ -242,10 +256,10 @@ export default function Page() {
   if (botId) {
     const botMeeting = botMeetings.find(m => m.meetingId === botId)
     if (!botMeeting) return <div className="p-6">Bot meeting not found.</div>
-    
+
     // Use live segments if available, otherwise fall back to botMeeting segments
     const displaySegments = liveSegments.length > 0 ? liveSegments : (botMeeting.segments || [])
-    
+
     return (
       <AppShell title={`${botMeeting.title || `Bot Meeting ${botId.substring(0, 8)}...`}`} subtitle={`Created ${new Date((botMeeting as any).createdAtMs ?? botMeeting.createdAt).toLocaleString('en-US', {
         timeZone: 'Asia/Karachi',
@@ -343,7 +357,7 @@ export default function Page() {
                   </div>
                 </div>
                 <div className="mt-2 text-sm text-muted-foreground">
-                  📝 {meeting.segments?.length || 0} segments • 
+                  📝 {meeting.segments?.length || 0} segments •
                   👥 {meeting.segments ? [...new Set(meeting.segments.map(s => s.speaker))].length : 0} speakers
                 </div>
               </a>
