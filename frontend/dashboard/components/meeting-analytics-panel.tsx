@@ -44,6 +44,22 @@ interface MeetingAnalyticsPanelProps {
     meetingId: string
 }
 
+interface SummaryResponse {
+    meetingId: string
+    summaryText: string
+    generatedAt: string
+    model: string
+    isFallback: boolean
+}
+
+interface ActionItem {
+    id: string
+    item: string
+    status: string
+    assignedTo?: string | null
+    createdAt?: string
+}
+
 // Color palette for speakers
 const SPEAKER_COLORS = [
     '#3B82F6', // blue
@@ -68,6 +84,8 @@ function formatDuration(seconds: number): string {
 
 export function MeetingAnalyticsPanel({ meetingId }: MeetingAnalyticsPanelProps) {
     const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null)
+    const [summary, setSummary] = useState<SummaryResponse | null>(null)
+    const [actionItems, setActionItems] = useState<ActionItem[]>([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
 
@@ -75,12 +93,32 @@ export function MeetingAnalyticsPanel({ meetingId }: MeetingAnalyticsPanelProps)
         async function fetchAnalytics() {
             try {
                 setLoading(true)
-                const res = await fetch(`/api/meeting-bot/analytics/${meetingId}`)
-                if (!res.ok) {
+                const [analyticsRes, summaryRes, actionItemsRes] = await Promise.all([
+                    fetch(`/api/meeting-bot/analytics/${meetingId}`),
+                    fetch(`/api/meeting-bot/summary/${meetingId}`),
+                    fetch(`/api/meeting-bot/action-items/${meetingId}`),
+                ])
+
+                if (!analyticsRes.ok) {
                     throw new Error('Failed to fetch analytics')
                 }
-                const data = await res.json()
-                setAnalytics(data)
+
+                const analyticsData = await analyticsRes.json()
+                setAnalytics(analyticsData)
+
+                if (summaryRes.ok) {
+                    const summaryData = await summaryRes.json()
+                    setSummary(summaryData)
+                } else {
+                    setSummary(null)
+                }
+
+                if (actionItemsRes.ok) {
+                    const actionItemsData = await actionItemsRes.json()
+                    setActionItems(Array.isArray(actionItemsData) ? actionItemsData : [])
+                } else {
+                    setActionItems([])
+                }
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Failed to load analytics')
             } finally {
@@ -110,20 +148,20 @@ export function MeetingAnalyticsPanel({ meetingId }: MeetingAnalyticsPanelProps)
         )
     }
 
-    if (!analytics || !analytics.hasAnalytics) {
-        return (
-            <div className="p-4 rounded-lg bg-muted/50 text-muted-foreground text-sm">
-                No analytics available for this meeting yet. Analytics are generated after the meeting ends.
-            </div>
-        )
-    }
-
-    const { speakerStats, meetingAnalytics } = analytics
+    const hasAnalytics = !!analytics?.hasAnalytics
+    const speakerStats = analytics?.speakerStats || []
+    const meetingAnalytics = analytics?.meetingAnalytics
     const totalSpeakingTime = speakerStats.reduce((sum, s) => sum + s.speakingTimeSeconds, 0)
 
     return (
         <div className="space-y-6">
+            {!hasAnalytics && (
+                <div className="p-4 rounded-lg bg-muted/50 text-muted-foreground text-sm">
+                    No analytics available for this meeting yet. Analytics are generated after the meeting ends.
+                </div>
+            )}
             {/* Meeting Overview Cards */}
+            {hasAnalytics && meetingAnalytics && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <Card>
                     <CardContent className="pt-4 pb-3">
@@ -177,9 +215,10 @@ export function MeetingAnalyticsPanel({ meetingId }: MeetingAnalyticsPanelProps)
                     </CardContent>
                 </Card>
             </div>
+            )}
 
             {/* Speaker Participation Chart */}
-            {speakerStats.length > 0 && (
+            {hasAnalytics && speakerStats.length > 0 && (
                 <Card>
                     <CardHeader className="pb-3">
                         <CardTitle className="text-base flex items-center gap-2">
@@ -240,7 +279,7 @@ export function MeetingAnalyticsPanel({ meetingId }: MeetingAnalyticsPanelProps)
             )}
 
             {/* Detailed Speaker Stats Table */}
-            {speakerStats.length > 0 && (
+            {hasAnalytics && speakerStats.length > 0 && (
                 <Card>
                     <CardHeader className="pb-3">
                         <CardTitle className="text-base">Detailed Speaker Stats</CardTitle>
@@ -288,6 +327,50 @@ export function MeetingAnalyticsPanel({ meetingId }: MeetingAnalyticsPanelProps)
                     </CardContent>
                 </Card>
             )}
+
+            {/* Summary */}
+            <Card>
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Meeting Summary</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {summary ? (
+                        <div className="space-y-2 text-sm">
+                            <div className="text-muted-foreground">
+                                Model: {summary.model}{summary.isFallback ? ' (fallback)' : ''}
+                            </div>
+                            <div className="whitespace-pre-wrap">{summary.summaryText}</div>
+                        </div>
+                    ) : (
+                        <div className="text-sm text-muted-foreground">
+                            No summary available yet. It will appear after post‑meeting processing completes.
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Action Items */}
+            <Card>
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Action Items</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {actionItems.length > 0 ? (
+                        <ul className="space-y-2 text-sm list-disc pl-5">
+                            {actionItems.map(item => (
+                                <li key={item.id}>
+                                    {item.item}
+                                    {item.assignedTo ? ` — ${item.assignedTo}` : ''}
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <div className="text-sm text-muted-foreground">
+                            No action items detected for this meeting yet.
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
         </div>
     )
 }

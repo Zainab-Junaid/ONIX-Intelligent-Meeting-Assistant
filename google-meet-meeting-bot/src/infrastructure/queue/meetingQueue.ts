@@ -109,34 +109,33 @@ export async function enqueueMeetingProcessing(
     // Generate a unique job ID based on meetingId to prevent duplicates
     const jobId = `meeting-${meetingId}`;
 
-    // Check if job already exists and is active
-    const existingJob = await queue.getJob(jobId);
-    if (existingJob) {
-        const state = await existingJob.getState();
-        if (state !== 'completed' && state !== 'failed') {
-            console.log(`[Queue] ⏭️ Job already exists for meeting ${meetingId} (state: ${state})`);
-            return null;
-        }
-    }
-
     // Priority mapping for BullMQ (lower number = higher priority)
     const priorityMap = { high: 1, normal: 2, low: 3 };
 
-    const job = await queue.add(
-        'process-completed-meeting',
-        {
-            meetingId,
-            timestamp: Date.now(),
-            priority,
-        },
-        {
-            jobId,
-            priority: priorityMap[priority],
-        }
-    );
+    try {
+        const job = await queue.add(
+            'process-completed-meeting',
+            {
+                meetingId,
+                timestamp: Date.now(),
+                priority,
+            },
+            {
+                jobId,
+                priority: priorityMap[priority],
+            }
+        );
 
-    console.log(`[Queue] ✅ Enqueued meeting processing job: ${meetingId} (jobId: ${job.id})`);
-    return job;
+        console.log(`[Queue] ✅ Enqueued meeting processing job: ${meetingId} (jobId: ${job.id})`);
+        return job;
+    } catch (error: any) {
+        const message = String(error?.message || '');
+        if (error?.name === 'JobIdAlreadyExistsError' || message.includes('JobIdAlreadyExists')) {
+            console.log(`[Queue] ⏭️ Job already exists for meeting ${meetingId}`);
+            return null;
+        }
+        throw error;
+    }
 }
 
 /**

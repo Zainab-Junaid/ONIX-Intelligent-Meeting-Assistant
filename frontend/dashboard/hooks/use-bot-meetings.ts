@@ -16,13 +16,17 @@ interface BotMeeting {
     start?: number;
     end?: number;
   }>;
+  startTime?: string | null;
+  endTime?: string | null;
 }
 
 interface BotSummary {
   meetingId: string;
+  meetingTitle?: string;
   summaryText: string;
   generatedAt: string;
   model: string;
+  isFallback?: boolean;
 }
 
 export const useBotMeetings = () => {

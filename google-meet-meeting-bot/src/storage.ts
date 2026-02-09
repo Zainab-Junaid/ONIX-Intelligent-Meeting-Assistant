@@ -257,19 +257,21 @@ export async function getTranscript(
       meetingTitle: doc.get("meetingTitle"),
     } as any;
   }
-  const transcript = await prisma.meetingTranscript.findUniqueOrThrow({
-    where: { meetingId },
-    include: {
-      segments: true,
-    },
-  });
+
+  // Read from MongoDB — the actual source of truth for transcripts.
+  // (The PostgreSQL meetingTranscript table is NOT populated by the pipeline.)
+  const { getTranscriptFromMongo, initMongoConnection } = await import("./infrastructure/mongo/transcriptRepo");
+  await initMongoConnection();
+  const transcript = await getTranscriptFromMongo(meetingId);
+  if (!transcript) throw new Error(`Transcript not found in MongoDB for meeting ${meetingId}`);
   console.log(`📄 Found transcript with ${transcript.segments.length} segments`);
-  console.dir(transcript);
   return {
     meetingId: transcript.meetingId,
     createdAt: transcript.createdAt,
     segments: transcript.segments as any,
-  };
+    userId: transcript.userId,
+    meetingTitle: transcript.meetingTitle,
+  } as any;
 }
 
 // Debug function to list all transcripts
@@ -342,11 +344,11 @@ export async function saveSummary(summary: MeetingSummaryInput) {
       return { id: "fs-summary" } as any;
     }
 
-    // Check if summary already exists for this meeting (prevent duplicates)
+    // Check if a non-fallback summary already exists (prevent duplicates)
     const existingSummary = await prisma.meetingSummary.findFirst({
       where: {
         meetingId: summary.meetingId,
-        isFallback: false // Only check non-fallback summaries
+        isFallback: false,
       },
     });
 
@@ -355,10 +357,18 @@ export async function saveSummary(summary: MeetingSummaryInput) {
       return existingSummary;
     }
 
-    // Only save non-fallback summaries
+    // Allow a fallback summary only if no non-fallback exists yet
     if (summary.isFallback) {
-      console.log(`⚠️ Skipping fallback summary for meeting ${summary.meetingId}`);
-      return null;
+      const existingFallback = await prisma.meetingSummary.findFirst({
+        where: {
+          meetingId: summary.meetingId,
+          isFallback: true,
+        },
+      });
+      if (existingFallback) {
+        console.log(`⚠️ Fallback summary already exists for meeting ${summary.meetingId}, skipping duplicate`);
+        return existingFallback;
+      }
     }
 
     const result = await prisma.meetingSummary.create({

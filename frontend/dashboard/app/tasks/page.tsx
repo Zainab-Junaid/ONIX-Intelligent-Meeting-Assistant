@@ -3,88 +3,60 @@
 import { AppShell } from "@/components/app-shell"
 import { useBotMeetings } from '@/hooks/use-bot-meetings'
 import { useSearchParams } from 'next/navigation'
+import { useEffect, useState } from 'react'
+
+interface ActionItem {
+  id: string
+  meetingId: string
+  meetingTitle?: string
+  item: string
+  status: string
+  assignedTo?: string | null
+  createdAt?: string
+}
 
 export default function Page() {
-  const { summaries, loading, error } = useBotMeetings()
+  const { meetings, loading, error } = useBotMeetings()
   const searchParams = useSearchParams()
   const meetingId = searchParams.get('meetingId') || searchParams.get('botId')
+  const [actionItems, setActionItems] = useState<ActionItem[]>([])
+  const [loadingItems, setLoadingItems] = useState(true)
+  const [itemsError, setItemsError] = useState<string | null>(null)
 
-  // Extract action items from summaries (ignore metadata lines)
-  const extractActionItems = (summaryText: string) => {
-    const actionItems: string[] = []
-    
-    // Split by lines and process each line
-    const lines = summaryText.split('\n')
-      .filter(l => !/^\*\*Meeting ID\*\*:/i.test(l.trim()))
-      .filter(l => !/^\*\*Duration\*\*:/i.test(l.trim()))
-      .filter(l => !/^\*\*Participants\*\*:/i.test(l.trim()))
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim()
-      
-      // Look for "Action Items:" section
-      if (line.toLowerCase().includes('action items:')) {
-        // Get all lines after "Action Items:" until next section or end
-        for (let j = i + 1; j < lines.length; j++) {
-          const nextLine = lines[j].trim()
-          
-          // Stop if we hit another section header
-          if (nextLine.toLowerCase().includes(':') && 
-              (nextLine.toLowerCase().includes('next steps') || 
-               nextLine.toLowerCase().includes('decisions') ||
-               nextLine.toLowerCase().includes('key discussion'))) {
-            break
-          }
-          
-          // Skip empty lines
-          if (!nextLine) continue
-          
-          // Extract items that start with bullet points, dashes, or numbers
-          if (nextLine.match(/^[•\-\*]\s+/) || nextLine.match(/^\d+\.\s+/)) {
-            let item = nextLine.replace(/^[•\-\*]\s+/, '').replace(/^\d+\.\s+/, '').trim()
-            
-            // Look for speaker assignments in the action item
-            const speakerMatch = item.match(/(.+?)\s*\(assigned to\s+([^)]+)\)/i)
-            if (speakerMatch) {
-              const task = speakerMatch[1].trim()
-              const speaker = speakerMatch[2].trim()
-              item = `${task} (assigned to ${speaker})`
-            }
-            
-            if (item && item.length > 5) {
-              actionItems.push(item)
-            }
-          }
-        }
-        break
-      }
-    }
-    
-    // If no "Action Items:" section found, look for scattered bullet points
-    if (actionItems.length === 0) {
-      const bulletPattern = /^[•\-\*]\s+(.+)$/gm
-      let match
-      while ((match = bulletPattern.exec(summaryText)) !== null) {
-        let item = match[1].trim()
-        
-        // Look for speaker assignments in scattered bullet points too
-        const speakerMatch = item.match(/(.+?)\s*\(assigned to\s+([^)]+)\)/i)
-        if (speakerMatch) {
-          const task = speakerMatch[1].trim()
-          const speaker = speakerMatch[2].trim()
-          item = `${task} (assigned to ${speaker})`
-        }
-        
-        if (item && item.length > 5 && !item.toLowerCase().includes('action items')) {
-          actionItems.push(item)
-        }
-      }
-    }
-
-    return actionItems
+  const resolveMeetingTitle = (id: string, fallback?: string) => {
+    const meeting = meetings.find(m => m.meetingId === id)
+    return meeting?.title || fallback || `Meeting ${id.substring(0, 8)}...`
   }
 
-  if (loading) {
+  useEffect(() => {
+    let isMounted = true
+    setLoadingItems(true)
+    setItemsError(null)
+
+    const url = meetingId
+      ? `/api/meeting-bot/action-items/${meetingId}`
+      : `/api/meeting-bot/action-items`
+
+    fetch(url)
+      .then(res => res.ok ? res.json() : Promise.reject(new Error('Failed to fetch action items')))
+      .then(data => {
+        if (!isMounted) return
+        setActionItems(Array.isArray(data) ? data : [])
+      })
+      .catch(err => {
+        if (!isMounted) return
+        setItemsError(err?.message || 'Failed to load action items')
+        setActionItems([])
+      })
+      .finally(() => {
+        if (!isMounted) return
+        setLoadingItems(false)
+      })
+
+    return () => { isMounted = false }
+  }, [meetingId])
+
+  if (loading || loadingItems) {
     return (
       <AppShell title="My Tasks" subtitle="Action items extracted from meetings">
         <div className="rounded-xl border p-8 text-sm text-muted-foreground">
@@ -94,41 +66,46 @@ export default function Page() {
     )
   }
 
-  if (error) {
+  if (error || itemsError) {
     return (
       <AppShell title="My Tasks" subtitle="Action items extracted from meetings">
         <div className="rounded-xl border p-8 text-sm text-red-500">
-          Error loading action items: {error}
+          Error loading action items: {error || itemsError}
         </div>
       </AppShell>
     )
   }
 
-  // Filter summaries by meetingId if provided
-  const filteredSummaries = meetingId 
-    ? summaries.filter(summary => summary.meetingId === meetingId)
-    : summaries
-
   // Group action items by meeting
-  const meetingActionItems = filteredSummaries.map(summary => {
-    const actionItems = extractActionItems(summary.summaryText)
-    return {
-      meetingId: summary.meetingId,
-      generatedAt: summary.generatedAt,
-      actionItems: actionItems,
-      totalItems: actionItems.length
+  const meetingActionItems = actionItems.reduce((acc, item) => {
+    const existing = acc.find(m => m.meetingId === item.meetingId)
+    if (existing) {
+      existing.actionItems.push(item)
+    } else {
+      acc.push({
+        meetingId: item.meetingId,
+        meetingTitle: item.meetingTitle,
+        generatedAt: item.createdAt,
+        actionItems: [item],
+      })
     }
-  }).filter(meeting => meeting.totalItems > 0)
+    return acc
+  }, [] as Array<{
+    meetingId: string
+    meetingTitle?: string
+    generatedAt?: string
+    actionItems: ActionItem[]
+  }>)
 
   // If viewing a specific meeting and no action items found, show message
   if (meetingId && meetingActionItems.length === 0) {
     return (
       <AppShell 
-        title={`Meeting Tasks ${meetingId.substring(0, 8)}...`} 
+        title={`Meeting Tasks ${resolveMeetingTitle(meetingId)}`} 
         subtitle="Action items from this meeting"
       >
         <div className="rounded-xl border p-8 text-sm text-muted-foreground">
-          No action items found for meeting {meetingId.substring(0, 8)}...
+          No action items found for meeting {resolveMeetingTitle(meetingId)}...
         </div>
       </AppShell>
     )
@@ -136,14 +113,14 @@ export default function Page() {
 
   return (
     <AppShell 
-      title={meetingId ? `Meeting Tasks ${meetingId.substring(0, 8)}...` : "My Tasks"} 
+      title={meetingId ? `Meeting Tasks ${resolveMeetingTitle(meetingId)}` : "My Tasks"} 
       subtitle={meetingId ? "Action items from this meeting" : "Action items extracted from meetings"}
     >
       <div className="space-y-4">
         {meetingActionItems.length === 0 ? (
           <div className="rounded-xl border p-8 text-sm text-muted-foreground">
             {meetingId 
-              ? `No action items found for meeting ${meetingId.substring(0, 8)}...`
+              ? `No action items found for meeting ${resolveMeetingTitle(meetingId)}...`
               : "No action items found yet. Start a bot meeting to generate action items from summaries."
             }
           </div>
@@ -152,9 +129,11 @@ export default function Page() {
             <div key={meeting.meetingId} className="rounded-lg border p-4">
               <div className="mb-4">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold text-lg">{(meeting as any).title || `Meeting ${meeting.meetingId.substring(0, 8)}...`}</h3>
+                  <h3 className="font-semibold text-lg">
+                    {resolveMeetingTitle(meeting.meetingId, meeting.meetingTitle)}
+                  </h3>
                   <div className="text-sm text-muted-foreground">
-                  {new Date((meeting as any).generatedAtMs ?? meeting.generatedAt).toLocaleString('en-US', {
+                  {meeting.generatedAt ? new Date(meeting.generatedAt).toLocaleString('en-US', {
                       timeZone: 'Asia/Karachi',
                       year: 'numeric',
                       month: 'short',
@@ -162,11 +141,11 @@ export default function Page() {
                       hour: '2-digit',
                       minute: '2-digit',
                       hour12: true
-                    })}
+                    }) : '—'}
                   </div>
                 </div>
                 <div className="text-sm text-muted-foreground mb-3">
-                  {meeting.totalItems} action item{meeting.totalItems !== 1 ? 's' : ''} identified from this meeting
+                  {meeting.actionItems.length} action item{meeting.actionItems.length !== 1 ? 's' : ''} identified from this meeting
                 </div>
               </div>
               
@@ -177,7 +156,10 @@ export default function Page() {
                     <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0 mt-0.5">
                       {index + 1}
                     </div>
-                    <div className="text-sm text-gray-800 leading-relaxed">{item}</div>
+                    <div className="text-sm text-gray-800 leading-relaxed">
+                      {item.item}
+                      {item.assignedTo ? ` — ${item.assignedTo}` : ''}
+                    </div>
                   </div>
                 ))}
               </div>

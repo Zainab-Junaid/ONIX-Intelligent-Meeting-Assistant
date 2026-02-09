@@ -3,7 +3,7 @@
 import { AppShell } from "@/components/app-shell"
 import { useBotMeetings } from '@/hooks/use-bot-meetings'
 import { useSearchParams } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/components/auth-provider'
 import { Mail, CheckCircle2, AlertCircle, Loader2, Edit2, Save, X } from 'lucide-react'
@@ -11,13 +11,15 @@ import { Textarea } from '@/components/ui/textarea'
 
 interface BotSummary {
   meetingId: string;
+  meetingTitle?: string;
   summaryText: string;
   generatedAt: string;
   model: string;
+  isFallback?: boolean;
 }
 
 export default function Page() {
-  const { summaries, loading, error, refetch } = useBotMeetings()
+  const { summaries, loading, error, refetch, meetings } = useBotMeetings()
   const searchParams = useSearchParams()
   const meetingId = searchParams.get('meetingId') || searchParams.get('botId')
   const { authUser } = useAuth()
@@ -26,6 +28,37 @@ export default function Page() {
   const [editingSummary, setEditingSummary] = useState<string | null>(null)
   const [editText, setEditText] = useState<string>('')
   const [saving, setSaving] = useState(false)
+  const [selectedSummary, setSelectedSummary] = useState<BotSummary | null>(null)
+  const [summaryLoading, setSummaryLoading] = useState(false)
+
+  const resolveMeetingTitle = (id: string, fallback?: string) => {
+    const meeting = meetings.find(m => m.meetingId === id)
+    return meeting?.title || fallback || `Meeting ${id.substring(0, 8)}...`
+  }
+
+  // Fetch summary directly when meetingId is provided
+  useEffect(() => {
+    if (!meetingId) {
+      setSelectedSummary(null)
+      return
+    }
+
+    let isMounted = true
+    setSummaryLoading(true)
+    fetch(`/api/meeting-bot/summary/${meetingId}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (isMounted) setSelectedSummary(data)
+      })
+      .catch(() => {
+        if (isMounted) setSelectedSummary(null)
+      })
+      .finally(() => {
+        if (isMounted) setSummaryLoading(false)
+      })
+
+    return () => { isMounted = false }
+  }, [meetingId])
 
   if (loading) {
     return (
@@ -47,8 +80,8 @@ export default function Page() {
     )
   }
 
-  // Filter summaries by meetingId if provided
-  const filteredSummaries = meetingId 
+  // Filter summaries by meetingId if provided (fallback path)
+  const filteredSummaries = meetingId
     ? summaries.filter(summary => summary.meetingId === meetingId)
     : summaries
 
@@ -151,14 +184,16 @@ export default function Page() {
   }
 
   // Show specific meeting summary if meetingId provided
-  if (meetingId && filteredSummaries.length > 0) {
-    const summary = filteredSummaries[0]
+  if (meetingId && (selectedSummary || filteredSummaries.length > 0)) {
+    const summary = selectedSummary || filteredSummaries[0]
     const status = emailStatus[summary.meetingId]
     const isSending = sendingEmail === summary.meetingId
-    
+
+    const meetingTitle = resolveMeetingTitle(meetingId, summary.meetingTitle)
+
     return (
       <AppShell 
-        title={`Meeting Summary ${meetingId.substring(0, 8)}...`} 
+        title={`Meeting Summary ${meetingTitle}`} 
         subtitle={`Generated ${new Date(summary.generatedAt).toLocaleString('en-US', {
           timeZone: 'Asia/Karachi',
           year: 'numeric',
@@ -216,7 +251,9 @@ export default function Page() {
                 <span className="text-sm">{status.message}</span>
               </div>
             )}
-            {editingSummary === summary.meetingId ? (
+            {summaryLoading ? (
+              <div className="text-sm text-muted-foreground">Loading summary...</div>
+            ) : editingSummary === summary.meetingId ? (
               <div className="space-y-2">
                 <Textarea
                   value={editText}
@@ -259,7 +296,7 @@ export default function Page() {
               </div>
             )}
             <div className="mt-2 text-xs text-muted-foreground">
-              Model: {summary.model} • Meeting ID: {summary.meetingId}
+              Model: {summary.model}{summary.isFallback ? ' (fallback)' : ''} • Meeting: {meetingTitle}
             </div>
           </div>
         </div>
@@ -383,7 +420,7 @@ export default function Page() {
                   </div>
                 )}
                 <div className="mt-2 text-xs text-muted-foreground">
-                  Model: {summary.model} • Meeting ID: {summary.meetingId}
+                  Model: {summary.model}{summary.isFallback ? ' (fallback)' : ''} • Meeting: {resolveMeetingTitle(summary.meetingId, summary.meetingTitle)}
                 </div>
               </div>
             )

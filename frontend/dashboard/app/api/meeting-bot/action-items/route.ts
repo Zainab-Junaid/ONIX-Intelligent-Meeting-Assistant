@@ -1,3 +1,19 @@
+import { NextRequest, NextResponse } from "next/server";
+
+export async function GET(_request: NextRequest) {
+  try {
+    const res = await fetch("http://localhost:3001/api/meetings/action-items", {
+      cache: "no-store",
+    });
+    const data = await res.json();
+    return NextResponse.json(data, { status: res.status });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: "Failed to fetch action items", details: error?.message },
+      { status: 500 }
+    );
+  }
+}
 // Next.js API route for getting user action items from bot database
 // Uses a properly managed connection pool that's reused across requests
 import { NextRequest, NextResponse } from 'next/server';

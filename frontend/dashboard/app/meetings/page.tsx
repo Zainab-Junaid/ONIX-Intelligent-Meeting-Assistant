@@ -371,7 +371,17 @@ export default function Page() {
 
         {/* Bot Meetings */}
         <div>
-          <h3 className="text-lg font-semibold mb-3">Bot Meetings</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold">Bot Meetings</h3>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetchBotMeetings()}
+              disabled={botLoading}
+            >
+              {botLoading ? 'Loading...' : 'Load Bot Meetings'}
+            </Button>
+          </div>
           {botLoading && (
             <div className="text-sm text-muted-foreground">Loading bot meetings...</div>
           )}
@@ -414,12 +424,29 @@ export default function Page() {
                       </span>
                       <span>•</span>
                       <span>
+
                         ⏱️ {(() => {
-                          const createdAtMs = Number(((meeting as any).createdAtMs ?? (meeting as any).createdAt) || 0);
-                          const summaryForMeeting = summary ? new Date(summary.generatedAt).getTime() : undefined;
-                          // Prefer summary time (meeting end) when available; fallback to at least 1 minute if start exists
-                          const endMs = summaryForMeeting && isFinite(summaryForMeeting) ? summaryForMeeting : createdAtMs;
-                          const mins = createdAtMs && endMs && endMs >= createdAtMs ? Math.max(1, Math.round((endMs - createdAtMs) / 60000)) : 0;
+                          const createdAtMs = typeof (meeting as any).createdAtMs === 'number'
+                            ? (meeting as any).createdAtMs
+                            : typeof (meeting as any).createdAt === 'string'
+                              ? new Date((meeting as any).createdAt).getTime()
+                              : 0;
+
+                          // 1. Prefer explicit start/end times if available
+                          const start = meeting.startTime ? new Date(meeting.startTime).getTime() : createdAtMs;
+                          const end = meeting.endTime
+                            ? new Date(meeting.endTime).getTime()
+                            : (meeting.status === 'LIVE'
+                              ? Date.now()
+                              : (summary ? new Date(summary.generatedAt).getTime() : start));
+
+                          // 2. Calculate duration
+                          const rawDurationMs = end - start;
+
+                          // 3. Format: logic (Math.ceil) + safety guard (> 0)
+                          // If duration is positive, round up (30s -> 1m). If 0 or negative, default to 1m.
+                          const mins = rawDurationMs > 0 ? Math.max(1, Math.ceil(rawDurationMs / 60000)) : 1;
+
                           return mins;
                         })()} min
                       </span>

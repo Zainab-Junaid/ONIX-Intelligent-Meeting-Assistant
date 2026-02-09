@@ -8,6 +8,7 @@ import {
   getMeetingJob,
   getTranscript,
   saveSummary,
+  getActionItems,
   updateMeetingStatus,
 } from "../storage";
 import { launchBotContainer } from "./launchBot";
@@ -439,6 +440,112 @@ app.get("/api/meetings/:meetingId/analytics", async (req, res) => {
   }
 });
 
+// Get meeting summary (resolved by meeting id or mongoTranscriptId)
+app.get("/api/meetings/:meetingId/summary", async (req, res) => {
+  const meetingId = req.params.meetingId;
+  try {
+    let meeting = await prisma.meeting.findUnique({
+      where: { id: meetingId },
+      select: { id: true, title: true },
+    });
+
+    if (!meeting) {
+      meeting = await prisma.meeting.findFirst({
+        where: { mongoTranscriptId: meetingId },
+        select: { id: true, title: true },
+      });
+    }
+
+    if (!meeting) {
+      return res.status(404).json({ error: "Meeting not found" });
+    }
+
+    const summary = await prisma.meetingSummary.findFirst({
+      where: { meetingId: meeting.id },
+      orderBy: { generatedAt: "desc" },
+      select: {
+        meetingId: true,
+        meetingTitle: true,
+        summaryText: true,
+        generatedAt: true,
+        model: true,
+        isFallback: true,
+      },
+    });
+
+    if (!summary) {
+      return res.status(404).json({ error: "Summary not found" });
+    }
+
+    res.json({
+      ...summary,
+      meetingTitle: summary.meetingTitle || meeting.title || "Untitled Meeting",
+    });
+  } catch (err) {
+    console.error(`Error fetching summary for meeting ${meetingId}:`, err);
+    res.status(500).json({ error: "Failed to fetch summary" });
+  }
+});
+
+// Get action items for a meeting (resolved by meeting id or mongoTranscriptId)
+app.get("/api/meetings/:meetingId/action-items", async (req, res) => {
+  const meetingId = req.params.meetingId;
+  try {
+    let meeting = await prisma.meeting.findUnique({
+      where: { id: meetingId },
+      select: { id: true },
+    });
+
+    if (!meeting) {
+      meeting = await prisma.meeting.findFirst({
+        where: { mongoTranscriptId: meetingId },
+        select: { id: true },
+      });
+    }
+
+    if (!meeting) {
+      return res.status(404).json({ error: "Meeting not found" });
+    }
+
+    const items = await getActionItems(meeting.id);
+    res.json(items);
+  } catch (err) {
+    console.error(`Error fetching action items for meeting ${meetingId}:`, err);
+    res.status(500).json({ error: "Failed to fetch action items" });
+  }
+});
+
+// List all action items with meeting titles for dashboard
+app.get("/api/meetings/action-items", async (_req, res) => {
+  try {
+    const items = await prisma.actionItem.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        meetingId: true,
+        description: true,
+        status: true,
+        createdAt: true,
+        meeting: { select: { title: true } },
+      },
+    });
+
+    res.json(
+      items.map(item => ({
+        id: item.id,
+        meetingId: item.meetingId,
+        meetingTitle: item.meeting?.title || "Untitled Meeting",
+        item: item.description,
+        status: item.status,
+        createdAt: item.createdAt,
+      }))
+    );
+  } catch (err) {
+    console.error("Error fetching action items:", err);
+    res.status(500).json({ error: "Failed to fetch action items" });
+  }
+});
+
 // endpoint to update meeting summary
 app.put("/update-summary/:meetingId", async (req, res) => {
   const meetingId = req.params.meetingId;
@@ -664,7 +771,14 @@ app.get("/debug/transcripts", async (_req, res) => {
 app.get("/list/summaries", async (_req, res) => {
   try {
     const result = await prisma.meetingSummary.findMany({
-      select: { meetingId: true, summaryText: true, generatedAt: true, model: true },
+      select: {
+        meetingId: true,
+        meetingTitle: true,
+        summaryText: true,
+        generatedAt: true,
+        model: true,
+        isFallback: true,
+      },
       orderBy: { generatedAt: "desc" },
     });
     res.json(result);

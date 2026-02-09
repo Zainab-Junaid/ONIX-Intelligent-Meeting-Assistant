@@ -56,12 +56,20 @@ export interface MeetingAnalyticsData {
  */
 export function computeMeetingAnalytics(
     speakerStats: SpeakerStat[],
-    metadata: TranscriptMetadata
+    metadata: TranscriptMetadata,
+    options?: {
+        participantCountOverride?: number;
+    }
 ): MeetingAnalyticsData {
+    const participantCountOverride = options?.participantCountOverride;
+    const participantCount = participantCountOverride && participantCountOverride > 0
+        ? participantCountOverride
+        : speakerStats?.length || 0;
+
     // Handle edge cases
     if (!speakerStats || speakerStats.length === 0) {
         console.log('[Analytics] No speaker stats available for meeting analytics');
-        return createEmptyAnalytics(metadata);
+        return createEmptyAnalytics(metadata, participantCount);
     }
 
     // Calculate totals from speaker stats
@@ -102,11 +110,11 @@ export function computeMeetingAnalytics(
         : 0;
 
     // Calculate balance score (how evenly distributed is speaking time)
-    const balanceScore = calculateBalanceScore(speakerStats);
+    const balanceScore = calculateBalanceScore(speakerStats, participantCount);
 
     // Calculate engagement score (composite metric)
     const engagementScore = calculateEngagementScore({
-        participantCount: speakerStats.length,
+        participantCount,
         interventionCount: speakerStats.reduce((sum, s) => sum + s.interventionCount, 0),
         silencePercentage,
         balanceScore,
@@ -117,7 +125,7 @@ export function computeMeetingAnalytics(
         totalSpeechSec: Math.round(totalSpeechSec * 100) / 100,
         silenceSec: Math.round(silenceSec * 100) / 100,
         silencePercentage: Math.round(silencePercentage * 10) / 10,
-        participantCount: speakerStats.length,
+        participantCount,
         segmentCount: metadata.segmentCount,
         totalWordCount,
         avgWordsPerMinute: Math.round(avgWordsPerMinute),
@@ -140,13 +148,13 @@ export function computeMeetingAnalytics(
 /**
  * Create empty analytics object for meetings with no data.
  */
-function createEmptyAnalytics(metadata: TranscriptMetadata): MeetingAnalyticsData {
+function createEmptyAnalytics(metadata: TranscriptMetadata, participantCount: number): MeetingAnalyticsData {
     return {
         totalDurationSec: 0,
         totalSpeechSec: 0,
         silenceSec: 0,
         silencePercentage: 0,
-        participantCount: 0,
+        participantCount,
         segmentCount: metadata.segmentCount,
         totalWordCount: 0,
         avgWordsPerMinute: 0,
@@ -166,8 +174,12 @@ function createEmptyAnalytics(metadata: TranscriptMetadata): MeetingAnalyticsDat
  * - Compare to ideal equal distribution
  * - Higher entropy = more balanced
  */
-function calculateBalanceScore(speakerStats: SpeakerStat[]): number {
-    if (speakerStats.length <= 1) {
+function calculateBalanceScore(speakerStats: SpeakerStat[], totalParticipants?: number): number {
+    const participantCount = totalParticipants && totalParticipants > 0
+        ? totalParticipants
+        : speakerStats.length;
+
+    if (participantCount <= 1) {
         return 100; // Single speaker is "balanced" by definition
     }
 
@@ -186,7 +198,7 @@ function calculateBalanceScore(speakerStats: SpeakerStat[]): number {
     }
 
     // Maximum possible entropy is log2(n) for n speakers
-    const maxEntropy = Math.log2(speakerStats.length);
+    const maxEntropy = Math.log2(participantCount);
 
     // Normalize to 0-100 scale
     const normalizedEntropy = maxEntropy > 0 ? (entropy / maxEntropy) * 100 : 0;

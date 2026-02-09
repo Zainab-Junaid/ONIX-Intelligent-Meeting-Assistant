@@ -339,31 +339,32 @@ export async function finalizeTranscript(meetingId: string): Promise<boolean> {
   }
 
   try {
-    const result = await MeetingTranscriptModel.updateOne(
-      { meetingId, finalized: { $ne: true } }, // Only update if not already finalized
+    const updated = await MeetingTranscriptModel.findOneAndUpdate(
+      { meetingId, finalized: { $ne: true } },
       {
         $set: {
           finalized: true,
           finalizedAt: new Date(),
           updatedAt: new Date(),
         },
-      }
+      },
+      { new: true }
     );
 
-    if (result.matchedCount === 0) {
-      // Either transcript doesn't exist or already finalized
-      const existing = await MeetingTranscriptModel.findOne({ meetingId });
-      if (existing) {
-        console.log(`[MongoDB] ℹ️ Transcript ${meetingId} already finalized`);
-        return true; // Already finalized is still success
-      } else {
-        console.error(`[MongoDB] ❌ Transcript ${meetingId} not found for finalization`);
-        return false;
-      }
+    if (updated) {
+      console.log(`[MongoDB] ✅ Transcript ${meetingId} finalized successfully`);
+      return true;
     }
 
-    console.log(`[MongoDB] ✅ Transcript ${meetingId} finalized successfully`);
-    return true;
+    // Either transcript doesn't exist or already finalized
+    const existing = await MeetingTranscriptModel.findOne({ meetingId });
+    if (existing) {
+      console.log(`[MongoDB] ℹ️ Transcript ${meetingId} already finalized`);
+      return true; // Already finalized is still success
+    }
+
+    console.error(`[MongoDB] ❌ Transcript ${meetingId} not found for finalization`);
+    return false;
   } catch (error) {
     console.error(`[MongoDB] ❌ Error finalizing transcript ${meetingId}:`, error);
     return false;

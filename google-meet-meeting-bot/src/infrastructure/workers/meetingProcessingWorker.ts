@@ -9,6 +9,8 @@ import {
     extractTranscriptMetadata,
     upsertAllAnalytics,
 } from '../../application/analytics';
+import { summarizeTranscript } from '../../summarize';
+import { saveSummary, saveActionItems } from '../../storage';
 
 // ============================================================================
 // CONFIGURATION
@@ -29,7 +31,7 @@ const MAX_LOCK_WAIT_MS = 30000; // Wait up to 30s for transcript finalization
  * - Stage 2: Semantic Processing (AI-dependent)
  * - Stage 3: Finalization
  */
-async function processMeetingJob(
+export async function processMeetingJob(
     job: Job<MeetingProcessingJobData, ProcessingJobResult>
 ): Promise<ProcessingJobResult> {
     const { meetingId } = job.data;
@@ -47,15 +49,23 @@ async function processMeetingJob(
         const { getTranscriptFromMongo, initMongoConnection } = await import('../mongo/transcriptRepo');
         await initMongoConnection();
 
-        const transcript = await getTranscriptFromMongo(meetingId);
-        if (!transcript) {
-            throw new Error(`Transcript not found in MongoDB for meeting ${meetingId}`);
-        }
+        const waitStart = Date.now();
+        let transcript = await getTranscriptFromMongo(meetingId);
 
-        // Check if transcript is finalized (wait with retry if not)
-        if (!transcript.finalized) {
-            console.log(`[Worker] ⏳ Transcript not finalized yet for ${meetingId}, will retry`);
-            throw new Error('Transcript not finalized yet - will retry');
+        while (!transcript || !transcript.finalized) {
+            const elapsed = Date.now() - waitStart;
+            if (elapsed >= MAX_LOCK_WAIT_MS) {
+                throw new Error('Transcript not finalized yet - will retry');
+            }
+
+            if (!transcript) {
+                console.log(`[Worker] ⏳ Transcript not found yet for ${meetingId}, waiting...`);
+            } else {
+                console.log(`[Worker] ⏳ Transcript not finalized yet for ${meetingId}, waiting...`);
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            transcript = await getTranscriptFromMongo(meetingId);
         }
 
         console.log(`[Worker] ✅ Transcript verified: ${transcript.segments?.length || 0} segments`);
@@ -100,6 +110,9 @@ async function processMeetingJob(
         await job.updateProgress(25);
 
         try {
+            let summaryGenerated = false;
+            let actionItemsCount = 0;
+
             // ======================================================================
             // STAGE 1: Deterministic Analytics
             // ======================================================================
@@ -126,7 +139,12 @@ async function processMeetingJob(
                 segments,
                 createdAt: transcript.createdAt,
             });
-            const meetingAnalytics = computeMeetingAnalytics(speakerStats, metadata);
+            const participantCount = await prisma.meetingParticipant.count({
+                where: { meetingId },
+            });
+            const meetingAnalytics = computeMeetingAnalytics(speakerStats, metadata, {
+                participantCountOverride: participantCount > 0 ? participantCount : undefined,
+            });
             console.log(`[Worker] Meeting duration: ${meetingAnalytics.totalDurationSec}s, ${meetingAnalytics.participantCount} participants`);
 
             // Extract unique speakers for participant records
@@ -143,16 +161,35 @@ async function processMeetingJob(
             // ======================================================================
             console.log(`[Worker] 🤖 Stage 2: Running semantic processing...`);
 
-            // TODO: Call existing summarization logic
-            // For now, reuse the existing processSummaryForMeeting function
-            // const summary = await generateSummary(transcript);
-            // const actionItems = await extractActionItems(summary, transcript);
-            // const keywords = await extractKeywords(summary);
-            // await upsertSummary(meetingId, summary);
-            // await upsertActionItems(meetingId, actionItems);
-            // await upsertKeywords(meetingId, keywords);
+            try {
+                const summarySegments = segments.map((seg, index) => ({
+                    ...seg,
+                    segmentId: seg.segmentId || `${meetingId}-${index}`,
+                }));
 
-            console.log(`[Worker] ✅ Stage 2 complete (semantic processing not yet implemented)`);
+                const summaryTranscript = trimTranscriptForSummary({
+                    meetingId,
+                    meetingTitle: transcript.meetingTitle,
+                    userId: transcript.userId,
+                    createdAt: transcript.createdAt,
+                    segments: summarySegments,
+                }, 16000);
+
+                const summaryResult = await summarizeTranscript(summaryTranscript);
+
+                const savedSummary = await saveSummary(summaryResult.summary);
+                if (summaryResult.actionItems?.length) {
+                    await saveActionItems(summaryResult.actionItems);
+                }
+
+                console.log(`[Worker] ✅ Summary saved: ${savedSummary ? 'yes' : 'no (skipped)'}`);
+                actionItemsCount = summaryResult.actionItems?.length || 0;
+                summaryGenerated = !!savedSummary;
+                console.log(`[Worker] ✅ Action items saved: ${actionItemsCount}`);
+            } catch (summaryError) {
+                console.warn(`[Worker] ⚠️ Summary/action item generation failed for ${meetingId}:`, summaryError);
+            }
+
             await job.updateProgress(80);
 
             // ======================================================================
@@ -176,8 +213,8 @@ async function processMeetingJob(
                 meetingId,
                 processingTimeMs: Date.now() - startTime,
                 analyticsCreated: true,
-                summaryGenerated: true,
-                actionItemsCount: 0, // Will be populated when semantic processing is implemented
+                summaryGenerated,
+                actionItemsCount,
             };
 
         } catch (processingError) {
@@ -196,16 +233,27 @@ async function processMeetingJob(
         const errorMessage = error instanceof Error ? error.message : String(error);
         console.error(`[Worker] ❌ Job failed for meeting ${meetingId}:`, errorMessage);
 
-        return {
-            success: false,
-            meetingId,
-            processingTimeMs: Date.now() - startTime,
-            analyticsCreated: false,
-            summaryGenerated: false,
-            actionItemsCount: 0,
-            error: errorMessage,
-        };
+        // CRITICAL: Re-throw so BullMQ marks the job as FAILED and retries it
+        // Returning { success: false } would mark it as COMPLETED (no retry).
+        throw error;
     }
+}
+
+function trimTranscriptForSummary<T extends { segments: Array<{ text?: string }> }>(
+    transcript: T,
+    maxChars: number
+): T {
+    let total = 0;
+    const segments: any[] = [];
+    for (let i = transcript.segments.length - 1; i >= 0; i--) {
+        const s = transcript.segments[i];
+        const len = (s?.text || "").length;
+        if (total + len > maxChars) break;
+        segments.push(s);
+        total += len;
+    }
+    segments.reverse();
+    return { ...transcript, segments } as T;
 }
 
 // ============================================================================

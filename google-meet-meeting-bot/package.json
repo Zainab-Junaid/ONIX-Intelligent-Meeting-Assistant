@@ -49,6 +49,7 @@
     "mongoose": "^8.0.3",
     "playwright": "^1.52.0",
     "postgres": "^3.4.5",
+    "redis": "^5.10.0",
     "socket.io": "^4.8.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3",

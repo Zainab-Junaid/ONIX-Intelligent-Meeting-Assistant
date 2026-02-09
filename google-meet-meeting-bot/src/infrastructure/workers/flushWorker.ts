@@ -161,10 +161,25 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
       return false; // Another worker is handling this
     }
 
-    // Re-check buffer length after acquiring lock (may have changed)
-    const currentBufferLength = await redis.llen(bufferKey);
-    if (currentBufferLength === 0) {
-      console.log(`[FlushWorker] ⚠️ Buffer empty for meeting ${meetingId} after lock acquisition`);
+    // Re-check buffer lengths after acquiring lock (may have changed)
+    const [currentBufferLength, currentRawBufferLength] = await Promise.all([
+      redis.llen(bufferKey),
+      redis.llen(rawBufferKey),
+    ]);
+    if (currentBufferLength === 0 && currentRawBufferLength === 0) {
+      // Both buffers empty — still check if we should finalize a COMPLETED meeting
+      try {
+        const meeting = await prisma.meeting.findUnique({
+          where: { id: meetingId },
+          select: { status: true },
+        });
+        if (meeting?.status === MeetingStatus.COMPLETED) {
+          console.log(`[FlushWorker] 🏁 Both buffers empty for COMPLETED meeting ${meetingId}. Finalizing transcript...`);
+          await finalizeTranscript(meetingId);
+        }
+      } catch (finalizeErr) {
+        console.warn(`[FlushWorker] ⚠️ Failed to finalize on empty buffers for ${meetingId}:`, finalizeErr);
+      }
       return false;
     }
 
@@ -296,7 +311,12 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
       try {
         const segmentCount = await getSegmentCountForMeeting(meetingId);
         await prisma.meeting.updateMany({
-          where: { mongoTranscriptId: meetingId },
+          where: {
+            OR: [
+              { id: meetingId },
+              { mongoTranscriptId: meetingId },
+            ],
+          },
           data: { segmentCount }
         });
         console.log(`[FlushWorker] ✅ Synced segmentCount=${segmentCount} to PostgreSQL for ${meetingId}`);
@@ -374,6 +394,34 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
       }
     }
 
+    // ================================================================
+    // FINALIZATION CHECK: After BOTH buffers have been processed,
+    // check if the meeting is COMPLETED and all buffers are drained.
+    // This is the SINGLE place where finalization is triggered.
+    // ================================================================
+    if (cleanFlushed || rawFlushed) {
+      try {
+        const [remainingClean, remainingRaw] = await Promise.all([
+          redis.llen(bufferKey),
+          redis.llen(rawBufferKey),
+        ]);
+
+        if (remainingClean === 0 && remainingRaw === 0) {
+          const meeting = await prisma.meeting.findUnique({
+            where: { id: meetingId },
+            select: { status: true },
+          });
+
+          if (meeting?.status === MeetingStatus.COMPLETED) {
+            console.log(`[FlushWorker] 🏁 All buffers drained for COMPLETED meeting ${meetingId}. Finalizing transcript...`);
+            await finalizeTranscript(meetingId);
+          }
+        }
+      } catch (finalizeError) {
+        console.warn(`[FlushWorker] ⚠️ Failed to finalize transcript after flush for ${meetingId}:`, finalizeError);
+      }
+    }
+
     return cleanFlushed || rawFlushed;
   } catch (error) {
     console.error(
@@ -424,7 +472,7 @@ async function cleanupStaleMeetings(): Promise<void> {
         try {
           const meeting = await prisma.meeting.findUnique({
             where: { id: meetingId },
-            select: { status: true }
+            select: { status: true, updatedAt: true }
           });
 
           if (meeting?.status === MeetingStatus.COMPLETED) {
@@ -437,6 +485,18 @@ async function cleanupStaleMeetings(): Promise<void> {
               await redis.del(lastActiveKey);
               cleanedCount++;
               continue; // Done with this meeting
+            }
+          } else if (meeting?.status === MeetingStatus.PROCESSING && meeting.updatedAt) {
+            const timeSinceUpdate = now - new Date(meeting.updatedAt).getTime();
+            if (timeSinceUpdate > CLEANUP_THRESHOLD_MS) {
+              console.warn(
+                `[FlushWorker] ⚠️ Meeting ${meetingId} stuck in PROCESSING ` +
+                `for ${Math.round(timeSinceUpdate / 1000 / 60)} minutes. Resetting to COMPLETED.`
+              );
+              await prisma.meeting.update({
+                where: { id: meetingId },
+                data: { status: MeetingStatus.COMPLETED },
+              });
             }
           }
         } catch (dbError) {

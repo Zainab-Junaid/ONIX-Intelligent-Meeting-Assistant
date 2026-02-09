@@ -45,7 +45,10 @@ export async function upsertSpeakerStats(
         select: { tenantId: true },
     });
 
-    const tenantId = meeting?.tenantId || DEFAULT_TENANT_ID;
+    if (!meeting?.tenantId) {
+        throw new Error(`Meeting ${meetingId} not found for speaker stats upsert`);
+    }
+    const tenantId = meeting.tenantId;
 
     // Upsert each speaker's stats
     for (const stat of speakerStats) {
@@ -99,7 +102,10 @@ export async function upsertMeetingAnalytics(
         select: { tenantId: true },
     });
 
-    const tenantId = meeting?.tenantId || DEFAULT_TENANT_ID;
+    if (!meeting?.tenantId) {
+        throw new Error(`Meeting ${meetingId} not found for meeting analytics upsert`);
+    }
+    const tenantId = meeting.tenantId;
 
     await prisma.meetingAnalytics.upsert({
         where: { meetingId },
@@ -149,7 +155,10 @@ export async function upsertAllAnalytics(
             where: { id: meetingId },
             select: { tenantId: true },
         });
-        const tenantId = meeting?.tenantId || DEFAULT_TENANT_ID;
+        if (!meeting?.tenantId) {
+            throw new Error(`Meeting ${meetingId} not found for analytics upsert`);
+        }
+        const tenantId = meeting.tenantId;
 
         // 1. Upsert speaker stats
         for (const stat of speakerStats) {
