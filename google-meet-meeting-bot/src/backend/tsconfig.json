@@ -19,5 +19,9 @@
     "../lib/**/*.ts",
     "../storage.ts",
     "../summarize.ts"
+  ],
+  "exclude": [
+    "../playwright/**/extentionCaptionScraper.ts",
+    "../playwright/**/IncrementalcaptionScraper.ts"
   ]
 }

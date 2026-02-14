@@ -35,6 +35,9 @@ export interface SpeakerStat {
     longestTurnSec: number;    // Longest continuous speaking duration
     avgWordsPerMinute: number; // Speaking pace
     percentageOfMeeting: number; // 0-100 percentage
+    questionCount: number;     // Number of questions asked (sentences ending with ?)
+    talkToListenRatio: number | null; // Ratio of talking vs listening
+    hasMonologue: boolean;     // Whether they had an uninterrupted turn > 2 min
 }
 
 export interface SmoothedSegment {
@@ -157,6 +160,9 @@ export function computeSpeakerStats(segments: TranscriptSegment[]): SpeakerStat[
     const meetingEndSec = Math.max(...smoothed.map(s => s.end));
     const totalMeetingDurationSec = meetingEndSec - meetingStartSec;
 
+    // Total speaking time across all speakers (for talk-to-listen ratio)
+    const allSpeakersTotalTime = smoothed.reduce((sum, seg) => sum + (seg.end - seg.start), 0);
+
     // Group by speaker
     const bySpeaker = new Map<string, SmoothedSegment[]>();
     for (const seg of smoothed) {
@@ -172,6 +178,7 @@ export function computeSpeakerStats(segments: TranscriptSegment[]): SpeakerStat[
         let totalSpeakingTimeSec = 0;
         let wordCount = 0;
         let longestTurnSec = 0;
+        let hasMonologue = false;
 
         for (const turn of turns) {
             const duration = turn.end - turn.start;
@@ -180,6 +187,22 @@ export function computeSpeakerStats(segments: TranscriptSegment[]): SpeakerStat[
 
             if (duration > longestTurnSec) {
                 longestTurnSec = duration;
+            }
+            // Monologue: uninterrupted turn > 2 minutes (120s)
+            if (duration > 120) {
+                hasMonologue = true;
+            }
+        }
+
+        // Count questions by detecting '?' in segment text
+        let questionCount = 0;
+        for (const seg of segments) {
+            if (seg.speaker === speakerName && seg.text) {
+                // Count question marks in the text
+                const matches = seg.text.match(/\?/g);
+                if (matches) {
+                    questionCount += matches.length;
+                }
             }
         }
 
@@ -192,6 +215,13 @@ export function computeSpeakerStats(segments: TranscriptSegment[]): SpeakerStat[
             ? (totalSpeakingTimeSec / totalMeetingDurationSec) * 100
             : 0;
 
+        // Talk-to-listen ratio: time talking / time listening
+        // Listening = total meeting time - own speaking time
+        const listeningTime = totalMeetingDurationSec - totalSpeakingTimeSec;
+        const talkToListenRatio = listeningTime > 0
+            ? Math.round((totalSpeakingTimeSec / listeningTime) * 100) / 100
+            : null;
+
         stats.push({
             speakerName,
             totalSpeakingTimeSec: Math.round(totalSpeakingTimeSec * 100) / 100, // 2 decimal places
@@ -200,6 +230,9 @@ export function computeSpeakerStats(segments: TranscriptSegment[]): SpeakerStat[
             longestTurnSec: Math.round(longestTurnSec * 100) / 100,
             avgWordsPerMinute: Math.round(avgWordsPerMinute),
             percentageOfMeeting: Math.round(percentageOfMeeting * 10) / 10, // 1 decimal place
+            questionCount,
+            talkToListenRatio,
+            hasMonologue,
         });
     }
 

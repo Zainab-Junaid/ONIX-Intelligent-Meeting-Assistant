@@ -215,6 +215,13 @@ function subscribeToTranscriptUpdates(): void {
 }
 
 /**
+ * Get the Socket.IO server instance (for emitting events from other modules).
+ */
+export function getSocketIO(): SocketIOServer | null {
+  return io;
+}
+
+/**
  * Gracefully close Socket.IO and Redis connections
  */
 export async function closeSocketServer(): Promise<void> {

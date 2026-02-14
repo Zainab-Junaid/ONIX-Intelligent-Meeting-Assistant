@@ -1,5 +1,10 @@
-// Core logic for monitoring the DOM, extracting captions, and detecting speakers.
-// Handles realtime text processing and buffering for the transcription service.
+// ─────────────────────────────────────────────────────────────────────
+// captionScraper.ts — DOM-block segmentation (matches Google Meet exactly)
+//
+// One segment == one Google Meet caption DOM block.
+// We only commit when the DOM block changes (new node). No time-based or
+// silence-based rules. No delta slicing, no max duration, no dedupe.
+// ─────────────────────────────────────────────────────────────────────
 
 import { Page } from "playwright";
 import { v4 as uuidv4 } from "uuid";
@@ -7,7 +12,9 @@ import { pushFinalCaption, pushRawCaption } from "../../application/transcriptio
 import { Segment } from "../../domain/transcription/models";
 import { LEAVE_BANNER_SEL, performLeaveCall } from "./meetingActions";
 
-// bot will leave the meeting immediately if it hears any of the following phrases
+const STARTUP_STABILIZATION_MS = 1000;
+
+// Exit phrases — bot leaves immediately if any are heard
 const EXIT_PHRASES = [
     "notetaker, please leave",
     "note taker, please leave",
@@ -22,598 +29,370 @@ export async function scrapeCaptions(
 ): Promise<string> {
     const userId = process.env.USER_ID;
     const meetingTitle = process.env.MEETING_TITLE;
-    // exitRequested = exit condition
+    const meetingStartTime = createdAt.getTime();
     let exitRequested = false;
-    const meetingStartTime = createdAt.getTime(); // Real meeting start time
+    let finalizedSegmentCount = 0;
 
-    type CurrentSegment = {
-        segmentId: string;
-        speaker: string;
-        text: string;
-        startMs: number;
-        lastUpdateMs: number;
-    };
-
-    let currentSegment: CurrentSegment | null = null;
-    let finalizedSegmentCount = 0; // Counter for summary generation (no longer storing full array in memory)
-    const SILENCE_MS = 1500;
-    let silenceInterval: NodeJS.Timeout | null = null;
-
-    // STATEFUL SEGMENT TRACKING: Persistent segmentId that only changes on speaker change or finalization
-    let currentSegmentId: string | null = null;
-
-    // filter system msgs and UI elements
-    const isNotRealCaption = (text: string) => {
-        const normalized = text.toLowerCase();
-        return /you left the meeting|return to home screen|leave call|feedback|audio and video|learn more|arrow_downward|jump to bottom|jump to top|you have joined|your camera is off|your microphone is off|your hand is|there is one other person|there are \d+ other people|you were removed|you've been removed|joined|has raised a hand|reactions are not being announced|press shift\+r|keep_outline|pin.*to your main screen|mic_none|you can't remotely mute|more_vert|more options|combat\.|hello\. hello\. for\./i.test(normalized) ||
-            /^\s*(joined|has raised|reactions|press|keep_outline|pin|mic_none|more_vert|combat)\s*$/i.test(text.trim());
-    };
-
-    // Helper: finalize the current stabilized segment and push to Redis clean buffer
-    const finalizeCurrentSegment = async () => {
-        if (!currentSegment) return; // Fixed: was using !currentSegment
-        // Use floating point seconds for precision (3 decimal places) to prevent 0-duration segments
-        const startSec = Math.max(0, (currentSegment.startMs - meetingStartTime) / 1000);
-        let endSec = Math.max(startSec, (currentSegment.lastUpdateMs - meetingStartTime) / 1000);
-
-        // Ensure end is strictly greater than start if they are too close (min 100ms duration)
-        if (endSec - startSec < 0.1) {
-            endSec = startSec + 0.1;
+    // ── Node: transport only. No timers, no dedupe, no text mutation. ──
+    const handleRawCaption = async (speaker: string, text: string) => {
+        const now = Date.now();
+        if (EXIT_PHRASES.some((p) => text.toLowerCase().includes(p))) {
+            console.log("🚪 Exit phrase heard — hanging up.");
+            exitRequested = true;
         }
+        try {
+            await pushRawCaption(meetingId, {
+                meetingId,
+                text,
+                speaker,
+                timestamp: now,
+            });
+        } catch (err) {
+            console.error("❌ Failed to push raw caption:", err);
+        }
+    };
 
+    const handleFinalCaption = async (
+        speaker: string,
+        text: string,
+        startTimeMs: number,
+        endTimeMs: number,
+    ) => {
+        if (!text.trim()) return;
+        const startSec = Math.max(0, (startTimeMs - meetingStartTime) / 1000);
+        let endSec = Math.max(startSec, (endTimeMs - meetingStartTime) / 1000);
+        if (endSec - startSec < 0.1) endSec = startSec + 0.1;
         const segment: Segment = {
-            segmentId: currentSegment.segmentId,
-            speaker: currentSegment.speaker,
-            text: currentSegment.text.trim(),
+            segmentId: uuidv4(),
+            speaker,
+            text: text.trim(),
             start: Number(startSec.toFixed(3)),
             end: Number(endSec.toFixed(3)),
         };
         try {
             await pushFinalCaption(meetingId, segment, userId || undefined, meetingTitle || undefined);
             finalizedSegmentCount++;
-            console.log(`✅ Finalized segment [${segment.segmentId}] ${segment.speaker}: "${segment.text.substring(0, 50)}${segment.text.length > 50 ? '...' : ''}" (${segment.start}s-${segment.end}s)`);
+            console.log(
+                `✅ Finalized [${segment.segmentId}] ${segment.speaker}: ` +
+                `"${segment.text.substring(0, 80)}${segment.text.length > 80 ? "..." : ""}" ` +
+                `(${segment.start}s–${segment.end}s)`,
+            );
         } catch (err) {
-            console.error('❌ Failed to push final caption to buffer', err);
-        } finally {
-            // Reset segment state after finalization - new segmentId will be generated on next caption
-            currentSegment = null;
-            currentSegmentId = null;
-            lastSeenTextForSegment = ""; // Reset last seen text for next segment
+            console.error("❌ Failed to push final caption:", err);
         }
     };
 
-    // Silence watchdog to auto-finalize if no updates
-    const startSilenceWatchdog = () => {
-        if (silenceInterval) clearInterval(silenceInterval);
-        silenceInterval = setInterval(() => {
-            if (!currentSegment) return;
-            const idle = Date.now() - currentSegment.lastUpdateMs;
-            if (idle > SILENCE_MS) {
-                console.log(`🤫 Silence detected (> ${SILENCE_MS}ms). Finalizing segment.`);
-                void finalizeCurrentSegment();
-            }
-        }, 500);
-    };
+    await page.exposeFunction("onRawCaption", handleRawCaption);
+    await page.exposeFunction("onFinalCaption", handleFinalCaption);
 
-    // Track last seen text per segment to extract only NEW text (prevent accumulating duplicates)
-    let lastSeenTextForSegment: string = "";
-
-    // Helper: Calculate text similarity (simple word overlap)
-    const calculateTextSimilarity = (text1: string, text2: string): number => {
-        const words1 = new Set(text1.split(/\s+/).filter(w => w.length > 2));
-        const words2 = new Set(text2.split(/\s+/).filter(w => w.length > 2));
-        const intersection = new Set([...words1].filter(w => words2.has(w)));
-        const union = new Set([...words1, ...words2]);
-        return union.size > 0 ? intersection.size / union.size : 0;
-    };
-
-    // Create a closure to capture userId for the callback
-    // STATEFUL SEGMENT TRACKING: currentSegmentId persists across DOM mutations
-    const createCaptionHandler = () => {
-        return async (speaker: string, text: string) => {
-            const caption = text.trim();
-            if (!caption) return;
-
-            // Filter out system messages and UI elements
-            if (isNotRealCaption(caption)) {
-                console.log(`🚫 Filtered system message: "${caption.substring(0, 50)}${caption.length > 50 ? '...' : ''}"`);
-                return;
-            }
-
-            const now = Date.now();
-
-            // Push raw flicker stream for debugging/training
-            try {
-                await pushRawCaption(meetingId, {
-                    meetingId,
-                    text: caption,
-                    speaker,
-                    timestamp: now,
-                });
-            } catch (err) {
-                console.error('❌ Failed to push raw caption to buffer', err);
-            }
-
-            const normalized = caption.toLowerCase();
-            const isExit = EXIT_PHRASES.some((p) => normalized.includes(p));
-            if (isExit) {
-                console.log("Exit phrase heard — hanging up");
-                exitRequested = true;
-            }
-
-            // CRITICAL: Speaker change → finalize previous segment and generate new segmentId
-            if (currentSegment && currentSegment.speaker !== speaker) {
-                console.log(`🔄 Speaker changed from "${currentSegment.speaker}" to "${speaker}" - finalizing previous segment`);
-                await finalizeCurrentSegment();
-                // After finalization, currentSegmentId is reset to null, will be generated below
-                lastSeenTextForSegment = ""; // Reset last seen text for new speaker
-            }
-
-            // STATEFUL ID PERSISTENCE: Only generate new segmentId if we don't have one
-            // This ensures the same ID is used across all DOM mutations for the same segment
-            if (!currentSegmentId) {
-                currentSegmentId = uuidv4();
-                console.log(`🆕 Generated new persistent segmentId: ${currentSegmentId} for speaker "${speaker}"`);
-                lastSeenTextForSegment = ""; // Reset when starting new segment
-            }
-
-            // CRITICAL: Extract only NEW text to prevent accumulating duplicates
-            // The DOM may send full accumulated text, but we only want the new part
-            let textToAdd = caption;
-            if (lastSeenTextForSegment && caption.startsWith(lastSeenTextForSegment)) {
-                // Extract only the new part
-                textToAdd = caption.substring(lastSeenTextForSegment.length).trim();
-                if (textToAdd.length === 0) {
-                    // No new content, skip this update
-                    return;
-                }
-                console.log(`✂️ Extracted new text: "${textToAdd}" (full text was: "${caption.substring(0, 100)}${caption.length > 100 ? '...' : ''}")`);
-            } else if (lastSeenTextForSegment && lastSeenTextForSegment.includes(caption)) {
-                // The new text is a substring of what we've already seen (backtrack), skip
-                console.log(`⏭️ Skipping backtrack: new text "${caption}" is already in last seen "${lastSeenTextForSegment.substring(0, 100)}"`);
-                return;
-            }
-
-            // Start or update stabilization buffer with persistent segmentId
-            if (!currentSegment) {
-                // New segment - use the persistent segmentId and the extracted text
-                currentSegment = {
-                    segmentId: currentSegmentId, // Use persistent ID, not generate new one
-                    speaker,
-                    text: textToAdd, // Use only the new text, not full accumulated
-                    startMs: now,
-                    lastUpdateMs: now,
-                };
-                lastSeenTextForSegment = caption; // Track full accumulated text for next comparison
-                console.log(`📝 New stabilized segment [${currentSegmentId}] for ${speaker}: "${textToAdd.substring(0, 80)}${textToAdd.length > 80 ? '...' : ''}"`);
-            } else {
-                // Update existing segment
-                // CRITICAL: Keep the same segmentId for upsert operations
-                if (textToAdd === caption && currentSegment.text !== caption) {
-                    // This is a correction/replacement, not an append
-                    currentSegment.text = textToAdd;
-                    console.log(`🔄 Corrected segment [${currentSegmentId}] text: "${textToAdd.substring(0, 80)}${textToAdd.length > 80 ? '...' : ''}"`);
-                } else {
-                    // Append only the new text part
-                    currentSegment.text = (currentSegment.text + " " + textToAdd).trim();
-                    console.log(`🔄 Updated segment [${currentSegmentId}] - added: "${textToAdd}" | full text: "${currentSegment.text.substring(0, 80)}${currentSegment.text.length > 80 ? '...' : ''}"`);
-                }
-                currentSegment.lastUpdateMs = now;
-                lastSeenTextForSegment = caption; // Track full accumulated text for next comparison
-            }
-
-            // Auto-finalization triggers (silence > 1.5s or punctuation . ? !)
-            // BUT: Only finalize if we have substantial content to avoid premature finalization
-            const endsWithPunct = /[.!?]\s*$/.test(caption);
-            const idleMs = Date.now() - (currentSegment?.lastUpdateMs || now);
-            const hasSubstantialContent = currentSegment && currentSegment.text.trim().length > 10;
-
-            // Only finalize on punctuation if we have substantial content
-            if (endsWithPunct && hasSubstantialContent) {
-                console.log('✒️ Punctuation detected with substantial content, finalizing segment.');
-                await finalizeCurrentSegment();
-                // After finalization, currentSegmentId is reset, will generate new one on next caption
-            } else if (currentSegment && idleMs > SILENCE_MS && hasSubstantialContent) {
-                // Only finalize on silence if we have substantial content
-                console.log(`🤫 Silence detected (> ${SILENCE_MS}ms) with substantial content. Finalizing segment.`);
-                await finalizeCurrentSegment();
-                // After finalization, currentSegmentId is reset, will generate new one on next caption
-            } else if (endsWithPunct && !hasSubstantialContent) {
-                // Punctuation but not enough content - don't finalize yet, wait for more
-                console.log('⏳ Punctuation detected but content too short, waiting for more...');
-            }
-
-            startSilenceWatchdog();
-
-            if (isExit) {
-                // Finalize anything left and stop
-                await finalizeCurrentSegment();
-            }
-        };
-    };
-
-    // browser-side func to receive captions from injected observer
-    await page.exposeFunction(
-        "onCaption",
-        createCaptionHandler()
-    );
-
-    // (Bot no longer generates summary itself — the meetingProcessingWorker handles
-    //  analytics, summary, and action-item generation reliably via the BullMQ pipeline.)
-
-    // Ensure we emergency‑flush and notify backend if page/browser is closed (e.g., bot removed)
-    const emergencyFlushAndNotify = async (reason: string) => {
+    // ── Emergency notification on termination ──
+    const emergencyNotify = async (reason: string) => {
         try {
-            console.warn(`⚠️ Page/browser termination detected (${reason}) – finalizing remaining segment`);
-            // Finalize any remaining active segment (pushes to Redis buffer)
-            await finalizeCurrentSegment();
-            console.log(`✅ Emergency finalization completed - segment pushed to Redis buffer`);
-        } catch (e) {
-            console.error("❌ Emergency finalization failed:", e);
-        } finally {
-            // Notify backend so the pipeline (flush → finalize → worker) runs
-            try {
-                const jobId = process.env.JOB_ID || `auto-job-${meetingId}`;
-                await fetch("http://backend:3001/bot-done", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ jobId, meetingId }),
-                });
-                console.log(`✅ [bot-done] Emergency notification sent for ${meetingId}`);
-            } catch (notifyErr) {
-                console.error(`❌ [bot-done] Emergency notification failed:`, notifyErr);
-            }
+            console.warn(`⚠️ Termination detected (${reason}) — notifying backend.`);
+            const jobId = process.env.JOB_ID || `auto-job-${meetingId}`;
+            await fetch("http://backend:3001/bot-done", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ jobId, meetingId }),
+            });
+            console.log(`✅ [bot-done] Emergency notification sent for ${meetingId}`);
+        } catch (err) {
+            console.error("❌ [bot-done] Emergency notification failed:", err);
         }
     };
 
-    // Attach shutdown handlers once
-    page.once("close", () => { void emergencyFlushAndNotify("page.close"); });
-    page.once("crash", () => { void emergencyFlushAndNotify("page.crash"); });
-    page.context().once("close", () => { void emergencyFlushAndNotify("context.close"); });
-    page.context().browser()?.once("disconnected", () => { void emergencyFlushAndNotify("browser.disconnected"); });
+    page.once("close", () => void emergencyNotify("page.close"));
+    page.once("crash", () => void emergencyNotify("page.crash"));
+    page.context().once("close", () => void emergencyNotify("context.close"));
+    page.context().browser()?.once("disconnected", () => void emergencyNotify("browser.disconnected"));
 
-    // Wait for captions region to be available (after ensureCaptionsOn)
-    console.log("Waiting for captions region to be available...");
-
-    // Try multiple selectors for caption regions - ORDER MATTERS
-    // We prioritize explicit "Captions" regions and avoid generic ones that catch notifications
-    const captionSelectors = [
-        // Primary: Explicit caption regions
-        '[role="region"][aria-label*="Captions"]',
-        '[role="region"][aria-label*="captions"]',
-        '[role="region"][aria-label*="Closed captions"]',
-
-        // Secondary: Class-based (less reliable but often works)
-        '.captions',
-        '.caption',
-
-        // Fallback: Generic aria-live BUT we must be careful
-        // '[aria-live="polite"]' // <--- REMOVED: Catches notification toasts (e.g. "You joined")
-        '[class*="caption-window"]',
-        'div[jsname="dsSSge"]' // Common Google Meet caption container jsname
-    ];
-
-    let captionRegion = null;
-    for (const selector of captionSelectors) {
-        try {
-            // Short timeout for each check
-            await page.waitForSelector(selector, { timeout: 2000, state: 'attached' });
-            const candidates = await page.$$(selector);
-
-            for (const candidate of candidates) {
-                // VETTING PROCESS: Check if this is actually the caption region
-                const label = await candidate.getAttribute('aria-label') || '';
-                const text = await candidate.textContent() || '';
-
-                // Reject notification areas and controls
-                if (label.toLowerCase().includes('notification') ||
-                    label.toLowerCase().includes('control') ||
-                    text.includes('Press Down Arrow') ||
-                    text.includes('You have joined')) {
-                    console.log(`⚠️ Rejecting candidate selector "${selector}" - looks like UI/Notification: "${label}"`);
-                    continue;
-                }
-
-                // Accept if it looks promising
-                captionRegion = candidate;
-                console.log(`✅ Found valid caption region with selector: ${selector} (Label: "${label}")`);
-                break;
-            }
-
-            if (captionRegion) break;
-        } catch (e) {
-            // Ignore timeout and try next
-        }
-    }
-
-    if (!captionRegion) {
-        console.log("No caption region found with any selector, proceeding anyway...");
-    }
-
-    // Debug: Check what caption regions exist
-    const captionRegions = await page.evaluate(() => {
-        const regions = document.querySelectorAll('[role="region"], [aria-live], .captions, .caption');
-        return Array.from(regions).map(r => ({
-            tagName: r.tagName,
-            ariaLabel: r.getAttribute('aria-label'),
-            ariaLive: r.getAttribute('aria-live'),
-            textContent: r.textContent?.trim(),
-            className: r.className,
-            id: r.id
-        }));
-    });
-    console.log("Found caption regions:", captionRegions);
-
-    // Wait for captions to actually appear (with shorter timeout)
+    // ── Wait for caption region (case-insensitive) ────────────────────
+    console.log("⏳ Waiting for caption region...");
     try {
-        await page.waitForFunction(() => {
-            const selectors = [
-                '[role="region"][aria-label*="Captions"]',
-                '[role="region"][aria-label*="captions"]',
-                // '[aria-live="polite"]', // Too broad
-                // '[aria-live="assertive"]'
-            ];
-
-            for (const sel of selectors) {
-                const region = document.querySelector(sel);
-                if (region && region.textContent && region.textContent.trim().length > 0) {
-                    return true;
-                }
-            }
-
-            // Checking generic live regions but excluding known notifications
-            const liveRegions = document.querySelectorAll('[aria-live]');
-            for (const region of Array.from(liveRegions)) {
-                if (region.textContent && region.textContent.trim().length > 0) {
-                    const text = region.textContent.trim();
-                    if (!text.includes('You have joined') &&
-                        !text.includes('raised a hand') &&
-                        !text.includes('Press Down Arrow')) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }, { timeout: 10000 });
-        console.log("Captions content detected - setting up observer...");
-    } catch (e) {
-        console.log("No caption content detected, but proceeding with observer setup...");
+        await page.waitForFunction(
+            () => !!document.querySelector('div[role="region"]') &&
+                Array.from(document.querySelectorAll('div[role="region"]'))
+                    .some(el => (el.getAttribute("aria-label") || "").toLowerCase().includes("caption")),
+            { timeout: 15000 },
+        );
+        console.log("✅ Caption region found.");
+    } catch {
+        console.log("⚠️ No caption region found within 15s — proceeding anyway.");
     }
 
-    // inject observer into page to listen to DOM changes & send caption updates
+    // ── Startup stabilization ─────────────────────────────────────────
+    await page.waitForTimeout(STARTUP_STABILIZATION_MS);
+
+    // ── Inject browser-side observer (DOM-block segmentation) ──────────
     await page.evaluate(() => {
-        const badgeSel = ".NWpY1d, .xoMHSc";
-        let lastSpeaker = "Unknown Speaker";
-        let mutationCount = 0;
-        const lastSeenText = new Map<string, string>(); // Track last seen text per speaker
+        // ── State: one active caption block only ──
+        let activeNode: HTMLElement | null = null;
+        let activeSpeakerKey: string | null = null;
+        let activeSpeakerName: string = "";
+        let activeText: string = "";
+        let activeStartTime: number = 0;
 
-        // extract speaker with better detection
-        const getSpeaker = (node: HTMLElement): string => {
-            // Try multiple selectors for speaker badges
-            const speakerSelectors = [
-                ".NWpY1d", ".xoMHSc",
-                "[data-speaker-name]",
-                ".speaker-name",
-                "[aria-label*='speaking']",
-                ".caption-speaker"
-            ];
+        const lastRawPush = new Map<string, number>();
+        const RAW_THROTTLE_MS = 1000;
+        const observedBlocks = new WeakSet<HTMLElement>();
 
-            for (const selector of speakerSelectors) {
-                const badge = node.querySelector<HTMLElement>(selector);
-                const speaker = badge?.textContent?.trim();
-                if (speaker && speaker.length > 0 && speaker !== lastSpeaker) {
-                    console.log(`[DEBUG] New speaker detected: "${speaker}" (was: "${lastSpeaker}")`);
-                    return speaker;
-                }
-            }
-
-            // If no new speaker found, check if the node itself contains speaker info
-            const nodeText = node.textContent?.trim() || "";
-            const speakerMatch = nodeText.match(/^([^:]+):/);
-            if (speakerMatch) {
-                const speaker = speakerMatch[1].trim();
-                if (speaker && speaker !== lastSpeaker) {
-                    console.log(`[DEBUG] Speaker from text pattern: "${speaker}"`);
-                    return speaker;
-                }
-            }
-
-            return lastSpeaker;
+        const commit = (speakerName: string, text: string, startTime: number) => {
+            if (!text.trim()) return;
+            const endTime = Date.now();
+            console.log(`[onix] COMMIT ${speakerName}: "${text.substring(0, 60)}${text.length > 60 ? "…" : ""}"`);
+            (window as unknown as { onFinalCaption?: (a: string, b: string, c: number, d: number) => void }).onFinalCaption?.(
+                speakerName,
+                text,
+                startTime,
+                endTime,
+            );
         };
 
-        // extract caption
-        const getText = (node: HTMLElement): string => {
-            const clone = node.cloneNode(true) as HTMLElement;
-            clone
-                .querySelectorAll<HTMLElement>(badgeSel)
-                .forEach((el) => el.remove());
-            return clone.textContent?.trim() ?? "";
-        };
+        const handleCaption = (speakerKey: string, speakerName: string, rawText: string, node: HTMLElement) => {
+            const text = rawText.trim();
+            if (!text) return;
 
-        // Clean text - remove UI elements and system messages
-        const cleanText = (text: string): string => {
-            // Remove "arrow_downwardJump to bottom" and similar UI elements
-            return text
-                .replace(/arrow_downwardJump to bottom/gi, '')
-                .replace(/arrow_upwardJump to top/gi, '')
-                .replace(/Jump to (bottom|top)/gi, '')
-                .replace(/\s+/g, ' ')
-                .trim();
-        };
-
-        // Extract only NEW text by comparing with last seen text
-        const extractNewText = (fullText: string, speaker: string): string | null => {
-            const lastText = lastSeenText.get(speaker) || "";
-
-            // If this is the same text, skip it
-            if (fullText === lastText) {
-                return null;
-            }
-
-            // If the new text starts with the last text, extract only the new part
-            if (fullText.startsWith(lastText)) {
-                const newPart = fullText.substring(lastText.length).trim();
-                // Only return if there's substantial new content (more than just punctuation/spaces)
-                if (newPart.length > 2) {
-                    return newPart;
+            if (activeNode === null) {
+                console.log(`[onix-debug] New active node started: ${speakerName}`);
+                activeNode = node;
+                activeSpeakerKey = speakerKey;
+                activeSpeakerName = speakerName || "Speaker";
+                activeText = text;
+                activeStartTime = Date.now();
+                const now = Date.now();
+                const lastPush = lastRawPush.get(speakerKey) || 0;
+                if (now - lastPush >= RAW_THROTTLE_MS) {
+                    lastRawPush.set(speakerKey, now);
+                    (window as unknown as { onRawCaption?: (a: string, b: string) => void }).onRawCaption?.(activeSpeakerName, activeText);
                 }
-                return null;
+                return;
             }
 
-            // If the text is completely different (new sentence/thought), return it
-            // But check if it's not just a shorter version of what we've seen
-            if (lastText.length > 0 && !lastText.includes(fullText.substring(0, Math.min(20, fullText.length)))) {
-                return fullText; // Completely new text
+            if (node === activeNode) {
+                activeText = text;
+                const now = Date.now();
+                const lastPush = lastRawPush.get(speakerKey) || 0;
+                if (now - lastPush >= RAW_THROTTLE_MS) {
+                    lastRawPush.set(speakerKey, now);
+                    (window as unknown as { onRawCaption?: (a: string, b: string) => void }).onRawCaption?.(activeSpeakerName, activeText);
+                }
+                return;
             }
 
-            // If last text is empty or this is longer, it's new
-            if (lastText.length === 0 || fullText.length > lastText.length) {
-                return fullText;
+            // New DOM caption block
+            console.log(`[onix-debug] Node mismatch - committing previous. Old: ${activeSpeakerName}, New: ${speakerName}`);
+            commit(activeSpeakerName, activeText, activeStartTime);
+            activeNode = node;
+            activeSpeakerKey = speakerKey;
+            activeSpeakerName = speakerName || "Speaker";
+            activeText = text;
+            activeStartTime = Date.now();
+            const now = Date.now();
+            const lastPush = lastRawPush.get(speakerKey) || 0;
+            if (now - lastPush >= RAW_THROTTLE_MS) {
+                lastRawPush.set(speakerKey, now);
+                (window as unknown as { onRawCaption?: (a: string, b: string) => void }).onRawCaption?.(activeSpeakerName, activeText);
             }
+        };
 
+        // ── DOM selectors (primary + fallbacks; Google Meet changes class names often) ──
+        const captionParentSels = [".nMcdL", "[data-self-name='caption_block']", "[data-message-id]", "div[jsname='dsSSge']", ".TBMuR", ".BjBvRC"];
+        const captionTextSels = [".ygicle", "[data-message-text]", ".cn", ".VbkSUe"];
+        const speakerSels = [".NWpY1d", ".xoMHSc", "[data-participant-name]", ".zs7s8d", ".jT5e9"];
+
+        const findInBlock = (block: HTMLElement, sels: string[]): Element | null => {
+            for (const sel of sels) {
+                const el = block.querySelector(sel);
+                if (el) return el;
+            }
             return null;
         };
 
-        // send caption to exposed onCaption()
-        const send = (node: HTMLElement): void => {
-            let txt = getText(node);
-            const spk = getSpeaker(node);
+        // ── Block scanning (pass DOM block reference for node-identity segmentation) ──
+        const scanBlock = (block: HTMLElement) => {
+            if (observedBlocks.has(block)) return;
+            observedBlocks.add(block);
 
-            // Clean the text
-            txt = cleanText(txt);
+            // Debug: log what we are scanning
+            console.log(`[onix-debug] Scanning block: ${block.tagName}.${block.className} | Content: ${block.textContent?.substring(0, 30)}...`);
 
-            // Skip if empty or just speaker name
-            if (!txt || txt.length === 0 || txt.toLowerCase() === spk.toLowerCase()) {
+            const txtNode = findInBlock(block, captionTextSels);
+            if (!txtNode) {
+                const allText = block.innerText;
+                console.log(`[onix-debug] No text node found with selectors. InnerText: ${allText}`);
                 return;
             }
 
-            // Extract only NEW text
-            const newText = extractNewText(txt, spk);
+            const speakerEl = findInBlock(block, speakerSels);
+            const rawName = speakerEl?.textContent?.trim() ?? "Speaker";
+            const speakerName = rawName
+                .replace(/\s*\(You\)\s*/gi, "")
+                .replace(/\s+/g, " ")
+                .replace(/:$/, "") // Remove trailing colon if present
+                .trim() || "Speaker";
+            const key = block.getAttribute("data-participant-id") || speakerName;
 
-            if (!newText) {
-                // No new content, skip
-                return;
-            }
+            console.log(`[onix-debug] Found text node. Speaker: ${speakerName}. Key: ${key}`);
 
-            // Update last seen text
-            lastSeenText.set(spk, txt);
+            const push = () => {
+                const raw = (txtNode as HTMLElement).textContent?.trim() ?? "";
+                if (raw) handleCaption(key, speakerName, raw, block);
+            };
 
-            console.log(`[DEBUG] Processing node: speaker="${spk}", fullText="${txt.substring(0, 100)}${txt.length > 100 ? '...' : ''}", newText="${newText}"`);
-
-            // Check if this looks like a new speaker change
-            if (spk !== lastSpeaker) {
-                console.log(`[DEBUG] Speaker changed from "${lastSpeaker}" to "${spk}"`);
-                lastSpeaker = spk;
-            }
-
-            console.log(`[DEBUG] Sending NEW caption: ${spk}: ${newText}`);
-            // @ts-expect-error
-            window.onCaption?.(spk, newText);
+            new MutationObserver(push).observe(txtNode, {
+                childList: true,
+                subtree: true,
+                characterData: true,
+            });
+            push();
         };
 
-        // More aggressive caption detection - check all possible caption containers
-        // But only process individual caption nodes, not the entire region
-        const checkForCaptions = () => {
-            // Find individual caption nodes (not the container)
-            const captionNodes = document.querySelectorAll('[role="region"][aria-label*="Captions"] > *, [role="region"][aria-label*="captions"] > *');
+        // ── Find caption region (case-insensitive) ──
+        const allRegions = document.querySelectorAll('div[role="region"]');
+        let region: Element | null = null;
+        for (const r of Array.from(allRegions)) {
+            const label = (r.getAttribute("aria-label") || "").toLowerCase();
+            if (label.includes("caption")) {
+                region = r;
+                break;
+            }
+        }
 
-            captionNodes.forEach((node) => {
-                if (node instanceof HTMLElement && node.textContent?.trim()) {
-                    const text = node.textContent.trim();
-                    // Only process if this looks like a caption node (has speaker info or is a recent addition)
-                    if (text.length > 5 && !text.includes('arrow_downward') && !text.includes('Jump to')) {
-                        send(node);
-                    }
-                }
+        // Dump the entire region structure for debugging
+        if (region) {
+            console.log(`[onix-debug] Region matched: ${region.tagName}.${region.className}`);
+            const children = Array.from(region.children).slice(0, 3);
+            children.forEach((child, i) => {
+                console.log(`[onix-debug] Region child[${i}]: ${child.tagName}.${child.className} | ${(child as HTMLElement).innerText?.substring(0, 50)}`);
             });
+        }
 
-            // Also check aria-live regions for new announcements
-            const liveRegions = document.querySelectorAll('[aria-live="polite"], [aria-live="assertive"]');
-            liveRegions.forEach((region) => {
-                if (region instanceof HTMLElement && region.textContent?.trim()) {
-                    const text = region.textContent.trim();
-                    // Only process if it's not a system message
-                    if (text.length > 5 &&
-                        !text.includes('joined') &&
-                        !text.includes('raised a hand') &&
-                        !text.includes('Reactions are not') &&
-                        !text.includes('You have joined') &&
-                        !text.includes('Your camera') &&
-                        !text.includes('Your microphone')) {
-                        send(region);
-                    }
-                }
-            });
-        };
+        if (!region) {
+            console.warn("[onix] Caption region not found in DOM.");
+            region = document.querySelector('.a4cQT');
+            if (region) console.log("[onix-debug] Found fallback region .a4cQT");
+            if (!region) return;
+        }
 
-        // Initial check
-        checkForCaptions();
-
-        // watch DOM for caption updates and run send()
-        new MutationObserver((mutations) => {
-            mutationCount++;
-            console.log(`[DEBUG] Mutation #${mutationCount}, ${mutations.length} changes`);
-
+        const observer = new MutationObserver((mutations) => {
             for (const m of mutations) {
-                // new caption elements - only process if they look like actual captions
-                Array.from(m.addedNodes).forEach((n) => {
-                    if (n instanceof HTMLElement) {
-                        const text = n.textContent?.trim() || "";
-                        // Only process if it's substantial text and not a system message
-                        if (text.length > 5 &&
-                            !text.includes('arrow_downward') &&
-                            !text.includes('Jump to') &&
-                            !text.match(/^(joined|has raised|reactions|press|keep_outline|pin|mic_none|more_vert|combat)/i)) {
-                            console.log(`[DEBUG] Added node: ${n.tagName}, text="${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-                            send(n);
+                for (const node of Array.from(m.addedNodes)) {
+                    if (node instanceof HTMLElement) {
+                        try {
+                            // Log every added node in region for debugging
+                            console.log(`[onix-debug] Mutation add: ${node.tagName}.${node.className}`);
+
+                            // If it matches a selector, scan it
+                            if (captionParentSels.some(sel => node.matches(sel)) || node.querySelector(captionTextSels.join(','))) {
+                                scanBlock(node);
+                            } else {
+                                // Recursively check children
+                                const potentialBlocks = node.querySelectorAll(captionParentSels.join(','));
+                                potentialBlocks.forEach(b => scanBlock(b as HTMLElement));
+                            }
+                        } catch (e) {
+                            console.error("[onix-debug] Error in mutation handler:", e);
                         }
                     }
-                });
-                // live text edits inside an existing element - only if parent looks like a caption
-                if (
-                    m.type === "characterData" &&
-                    m.target?.parentElement instanceof HTMLElement
-                ) {
-                    const parent = m.target.parentElement;
-                    const text = parent.textContent?.trim() || "";
-                    // Only process if parent is in caption region and has meaningful text
-                    if (text.length > 5 &&
-                        parent.closest('[role="region"][aria-label*="Captions"], [role="region"][aria-label*="captions"]')) {
-                        console.log(`[DEBUG] Character data change: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-                        send(parent);
-                    }
                 }
             }
-
-            // Check for new captions after mutations (but less frequently)
-            if (mutationCount % 3 === 0) {
-                checkForCaptions();
-            }
-        }).observe(document.body, {
-            childList: true,
-            characterData: true,
-            subtree: true,
         });
 
-        console.log("Caption observer setup complete - watching for DOM changes");
+        observer.observe(region, { childList: true, subtree: true });
+
+        // Initial scan
+        let initialBlockCount = 0;
+        region.querySelectorAll(captionParentSels.join(',')).forEach(b => { scanBlock(b as HTMLElement); initialBlockCount++; });
+
+        if (initialBlockCount === 0) {
+            console.log("[onix-debug] No initial blocks found with primary selectors. Trying broad scan...");
+            region.querySelectorAll<HTMLElement>("div").forEach(div => {
+                if (div.innerText && div.innerText.length > 5 && !observedBlocks.has(div)) {
+                    if (div.querySelector(captionTextSels.join(','))) {
+                        scanBlock(div);
+                        initialBlockCount++;
+                    }
+                }
+            });
+        }
+        console.log("[onix] Initial caption blocks found:", initialBlockCount);
+
+        // ── Flush all: commit active segment if any ──
+        const flushAll = () => {
+            const entries: Array<{ speaker: string; text: string; startTime: number; endTime: number }> = [];
+            if (activeText.trim()) {
+                entries.push({
+                    speaker: activeSpeakerName,
+                    text: activeText,
+                    startTime: activeStartTime,
+                    endTime: Date.now(),
+                });
+            }
+            activeNode = null;
+            activeSpeakerKey = null;
+            activeSpeakerName = "";
+            activeText = "";
+            activeStartTime = 0;
+            return entries;
+        };
+
+        window.addEventListener("beforeunload", () => {
+            if (activeText.trim()) {
+                (window as unknown as { onFinalCaption?: (a: string, b: string, c: number, d: number) => void }).onFinalCaption?.(
+                    activeSpeakerName, activeText, activeStartTime, Date.now(),
+                );
+            }
+            activeNode = null;
+            activeSpeakerKey = null;
+            activeSpeakerName = "";
+            activeText = "";
+        });
+        window.addEventListener("pagehide", () => {
+            if (activeText.trim()) {
+                (window as unknown as { onFinalCaption?: (a: string, b: string, c: number, d: number) => void }).onFinalCaption?.(
+                    activeSpeakerName, activeText, activeStartTime, Date.now(),
+                );
+            }
+            activeNode = null;
+            activeSpeakerKey = null;
+            activeSpeakerName = "";
+            activeText = "";
+        });
+
+        (window as unknown as { __onixFlushAll?: () => Array<{ speaker: string; text: string; startTime: number; endTime: number }> }).
+            __onixFlushAll = flushAll;
+
+        console.log("[onix] Caption observer attached (DOM-block segmentation).");
     });
 
-    // Note: No periodic flush timer needed - Redis buffer is flushed by worker based on size/time thresholds
-    // All finalized segments are pushed immediately to Redis via pushFinalCaption()
-
-    // leave call and finalize remaining segment
-    const leaveCall = async () => {
-        // Finalize any remaining active segment before leaving (pushes to Redis buffer)
-        console.log("🚪 Leaving call - finalizing remaining segment");
-        await finalizeCurrentSegment();
-
-        // Use extracted UI interaction logic
-        await performLeaveCall(page);
-
-        console.log(`✅ Leave call completed - all segments pushed to Redis buffer`);
+    // ── Awaitable flush: pull pending entries from browser and push them from Node ──
+    const flushPendingSegments = async () => {
+        try {
+            const entries = await page.evaluate(() => {
+                const flush = (window as unknown as { __onixFlushAll?: () => Array<{ speaker: string; text: string; startTime: number; endTime: number }> }).__onixFlushAll;
+                return flush ? flush() : [];
+            });
+            for (const entry of entries) {
+                await handleFinalCaption(entry.speaker, entry.text, entry.startTime, entry.endTime);
+            }
+            if (entries.length > 0) {
+                console.log(`✅ Flushed ${entries.length} pending segment(s) from browser.`);
+            }
+        } catch {
+            console.warn("⚠️ Could not flush pending segments (page may be closed).");
+        }
     };
 
-    // exit conditions (exit phrase, leave banner, hard timeout)
+    // ── Leave call helper ────────────────────────────────────────────
+    const leaveCall = async () => {
+        // Flush pending segments with proper await BEFORE leaving
+        await flushPendingSegments();
+        console.log("🚪 Leaving call.");
+        await performLeaveCall(page);
+        console.log("✅ Left call.");
+    };
+
+    // ── Exit conditions ──────────────────────────────────────────────
     try {
         await Promise.race([
             (async () => {
@@ -622,53 +401,32 @@ export async function scrapeCaptions(
             })(),
             page.waitForSelector(LEAVE_BANNER_SEL, { timeout: 0 }),
             new Promise((_, rej) =>
-                setTimeout(
-                    () => rej(new Error("Hard timeout (100 min) exceeded")),
-                    100 * 60 * 1000,
-                ),
+                setTimeout(() => rej(new Error("Hard timeout (100 min)")), 100 * 60 * 1000),
             ),
         ]);
     } catch (error) {
-        console.warn("⚠️ Meeting ended unexpectedly:", error instanceof Error ? error.message : String(error));
-        console.log("🔄 Attempting emergency finalization of any remaining segment...");
-        // Emergency finalization in case of unexpected termination (pushes to Redis buffer)
-        await finalizeCurrentSegment();
-        console.log(`✅ Emergency finalization completed - segment pushed to Redis buffer`);
-    } finally {
-        // Clean up silence watchdog timer
-        if (silenceInterval) {
-            clearInterval(silenceInterval);
-            silenceInterval = null;
-        }
+        console.warn("⚠️ Meeting ended:", error instanceof Error ? error.message : String(error));
     }
 
-    // Final cleanup: ensure any remaining segment is finalized and pushed to Redis
-    await finalizeCurrentSegment();
-    console.log(`✅ All segments finalized and pushed to Redis buffer for meeting ${meetingId}`);
-    console.log(`📊 Total segments captured: ${finalizedSegmentCount}`);
+    // ── Force-flush any remaining segments from browser (awaitable) ────
+    await flushPendingSegments();
 
-    // CRITICAL: Notify backend FIRST — this marks the meeting COMPLETED and
-    // triggers the queue-based post-meeting processing pipeline (analytics + summary + action items).
-    // The worker reads from MongoDB (correct source of truth) and handles everything.
+    // ── Notify backend ───────────────────────────────────────────────
     try {
         const jobId = process.env.JOB_ID || `auto-job-${meetingId}`;
-        console.log(`📤 Notifying backend about job completion...`);
-
+        console.log("📤 Notifying backend...");
         const res = await fetch("http://backend:3001/bot-done", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ jobId, meetingId }),
         });
-
-        if (res.ok) {
-            console.log(`✅ [bot-done] Backend notification successful (${res.status})`);
-        } else {
-            console.error(`❌ [bot-done] Backend notification failed (${res.status})`);
-        }
+        console.log(
+            res.ok ? `✅ [bot-done] Backend notified (${res.status})` : `❌ [bot-done] Notification failed (${res.status})`,
+        );
     } catch (err) {
-        console.error(`❌ [bot-done] Backend notification failed:`, err);
+        console.error("❌ [bot-done] Notification failed:", err);
     }
 
-    console.log(`🎉 Meeting ${meetingId}: ${finalizedSegmentCount} segments captured and pushed to Redis buffer`);
+    console.log(`🎉 Meeting ${meetingId}: ${finalizedSegmentCount} segments captured.`);
     return meetingId;
 }

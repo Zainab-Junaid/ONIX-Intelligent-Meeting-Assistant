@@ -108,6 +108,7 @@ model Meeting {
     createdAt        DateTime  @default(now())
     updatedAt        DateTime  @updatedAt
     deletedAt        DateTime? // Soft delete
+    language         String    @default("English") // Caption language (matches Google Meet dropdown text)
 
     // Relations
     participants     MeetingParticipant[]

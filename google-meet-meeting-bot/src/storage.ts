@@ -401,7 +401,7 @@ export async function saveActionItems(actionItems: ActionItemInput[]) {
       const items = actionItems.map((i) => ({
         id: `${i.meetingId}-${hashText(i.item || "")}`,
         text: i.item,
-        assignedTo: i.assignedTo,
+        assignedTo: i.assignedTo ?? undefined,
         dueDate: i.dueDate,
       }));
       await fsSaveActionItemsOnce(actionItems[0]?.meetingId || "", items);
@@ -461,7 +461,7 @@ export async function saveActionItems(actionItems: ActionItemInput[]) {
             tenantId,
             description: item.item || 'Unnamed action item',
             status: item.status || 'pending',
-            priority: 'medium',
+            priority: item.priority || 'medium',
             // assignedToUserId requires User lookup, skip for now
           },
         });

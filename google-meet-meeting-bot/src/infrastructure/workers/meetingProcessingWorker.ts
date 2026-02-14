@@ -8,6 +8,8 @@ import {
     computeMeetingAnalytics,
     extractTranscriptMetadata,
     upsertAllAnalytics,
+    upsertMeetingKeywords,
+    upsertMeetingAnalytics,
 } from '../../application/analytics';
 import { summarizeTranscript } from '../../summarize';
 import { saveSummary, saveActionItems } from '../../storage';
@@ -182,6 +184,31 @@ export async function processMeetingJob(
                     await saveActionItems(summaryResult.actionItems);
                 }
 
+                // Persist key topics and keywords from AI extraction
+                if (summaryResult.keyTopics) {
+                    const { topics, keywords } = summaryResult.keyTopics;
+
+                    // Update topicsDiscussed in MeetingAnalytics
+                    if (topics && topics.length > 0) {
+                        try {
+                            await upsertMeetingAnalytics(meetingId, meetingAnalytics, topics);
+                            console.log(`[Worker] ✅ Topics persisted: ${topics.join(', ')}`);
+                        } catch (topicErr) {
+                            console.warn(`[Worker] ⚠️ Failed to persist topics:`, topicErr);
+                        }
+                    }
+
+                    // Persist keywords to MeetingKeyword table
+                    if (keywords && keywords.length > 0) {
+                        try {
+                            await upsertMeetingKeywords(meetingId, keywords);
+                            console.log(`[Worker] ✅ Keywords persisted: ${keywords.length} entries`);
+                        } catch (kwErr) {
+                            console.warn(`[Worker] ⚠️ Failed to persist keywords:`, kwErr);
+                        }
+                    }
+                }
+
                 console.log(`[Worker] ✅ Summary saved: ${savedSummary ? 'yes' : 'no (skipped)'}`);
                 actionItemsCount = summaryResult.actionItems?.length || 0;
                 summaryGenerated = !!savedSummary;
@@ -243,17 +270,37 @@ function trimTranscriptForSummary<T extends { segments: Array<{ text?: string }>
     transcript: T,
     maxChars: number
 ): T {
-    let total = 0;
-    const segments: any[] = [];
-    for (let i = transcript.segments.length - 1; i >= 0; i--) {
+    // Balanced trimming: keep beginning (context/agenda) + end (conclusions/action items)
+    const beginBudget = Math.floor(maxChars * 0.25); // 25% from the start
+    const endBudget = maxChars - beginBudget;          // 75% from the end
+
+    // Collect segments from the beginning
+    let beginTotal = 0;
+    const beginSegments: any[] = [];
+    for (let i = 0; i < transcript.segments.length; i++) {
         const s = transcript.segments[i];
         const len = (s?.text || "").length;
-        if (total + len > maxChars) break;
-        segments.push(s);
-        total += len;
+        if (beginTotal + len > beginBudget) break;
+        beginSegments.push(s);
+        beginTotal += len;
     }
-    segments.reverse();
-    return { ...transcript, segments } as T;
+
+    // Collect segments from the end (reverse walk)
+    let endTotal = 0;
+    const endSegments: any[] = [];
+    for (let i = transcript.segments.length - 1; i >= 0; i--) {
+        const s = transcript.segments[i];
+        // Skip if already in beginSegments
+        if (i < beginSegments.length) break;
+        const len = (s?.text || "").length;
+        if (endTotal + len > endBudget) break;
+        endSegments.push(s);
+        endTotal += len;
+    }
+    endSegments.reverse();
+
+    const combined = [...beginSegments, ...endSegments];
+    return { ...transcript, segments: combined } as T;
 }
 
 // ============================================================================

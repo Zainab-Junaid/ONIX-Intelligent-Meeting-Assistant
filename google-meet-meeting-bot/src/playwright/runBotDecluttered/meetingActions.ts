@@ -196,7 +196,7 @@ export async function captionsRegionVisible(page: Page, t = 4000): Promise<boole
 // make sure captions are enabled
 export async function ensureCaptionsOn(page: Page, timeoutMs = 60_000) {
     console.log(" Waiting for UI to stabilize after join...");
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(2000);
 
     // close overlays if blocking interaction
     const overlay = page.locator('div[data-disable-esc-to-close="true"]');
@@ -220,9 +220,9 @@ export async function ensureCaptionsOn(page: Page, timeoutMs = 60_000) {
     for (let i = 0; i < 3; i++) {
         console.log(`Attempt ${i + 1}: Pressing 'c' key`);
         await page.keyboard.press("c");
-        await page.waitForTimeout(1500);
+        await page.waitForTimeout(800);
 
-        if (await captionsAlreadyEnabled(page, 1500)) {
+        if (await captionsAlreadyEnabled(page, 800)) {
             console.log("✅ Captions enabled via 'c' key");
             return;
         }
@@ -429,3 +429,212 @@ export async function performLeaveCall(page: Page) {
         .waitForSelector(LEAVE_BANNER_SEL, { timeout: 10_000 })
         .catch(() => undefined);
 }
+
+/**
+ * Select a specific caption language in Google Meet.
+ * Should be called AFTER ensureCaptionsOn() has enabled captions.
+ *
+ * Reads CAPTIONS_LANGUAGE from env (defaults to "English").
+ * If already English (default), skips entirely.
+ */
+export async function selectCaptionLanguage(page: Page): Promise<void> {
+    const targetLang = process.env.CAPTIONS_LANGUAGE || "English";
+
+    // Skip if default language — captions default to English
+    if (targetLang === "English") {
+        console.log("🌍 Caption language is English (default) — skipping selection");
+        return;
+    }
+
+    console.log(`🌍 Selecting caption language: "${targetLang}"`);
+
+    try {
+        // Step 1: Find and open caption settings
+        // Try multiple strategies since the aria-label varies
+        const settingsSelectors = [
+            'button[aria-label*="Caption settings"]',   // Capital C
+            'button[aria-label*="caption settings"]',   // lowercase
+            'button[aria-label*="Captions settings"]',  // plural
+            'button[aria-label*="captions settings"]',
+        ];
+
+        let settingsClicked = false;
+
+        for (const sel of settingsSelectors) {
+            const btn = page.locator(sel).first();
+            if (await btn.isVisible({ timeout: 1000 }).catch(() => false)) {
+                console.log(`  ✅ Found settings button: "${sel}"`);
+                try {
+                    await btn.click({ force: true, timeout: 3000 });
+                } catch {
+                    await btn.evaluate((el: HTMLElement) => el.click());
+                }
+                settingsClicked = true;
+                break;
+            }
+        }
+
+        // Fallback: DOM-based discovery
+        if (!settingsClicked) {
+            console.log("  🔍 Selectors failed — trying DOM-based discovery...");
+            settingsClicked = await page.evaluate(() => {
+                // Scan ALL buttons for anything caption/settings related
+                const buttons = Array.from(document.querySelectorAll('button'));
+                for (const btn of buttons) {
+                    const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                    const tooltip = (btn.getAttribute('data-tooltip') || '').toLowerCase();
+                    if (
+                        (label.includes('caption') && label.includes('setting')) ||
+                        (tooltip.includes('caption') && tooltip.includes('setting')) ||
+                        // Google Meet uses a gear icon next to captions
+                        (label.includes('caption') && btn.querySelector('i, .google-material-icons, [class*="icon"]'))
+                    ) {
+                        console.log(`[selectLang] DOM discovery hit: label="${label}" tooltip="${tooltip}"`);
+                        btn.click();
+                        return true;
+                    }
+                }
+                // Also look for any settings button inside the caption region
+                const captionRegion = document.querySelector('[role="region"][aria-label*="Caption"], [role="region"][aria-label*="caption"]');
+                if (captionRegion) {
+                    const regionBtns = captionRegion.querySelectorAll('button');
+                    for (const btn of Array.from(regionBtns)) {
+                        const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                        if (label.includes('setting') || label.includes('option') || label.includes('language')) {
+                            console.log(`[selectLang] Caption region button: label="${label}"`);
+                            btn.click();
+                            return true;
+                        }
+                    }
+                }
+                console.log('[selectLang] DOM discovery failed — no caption settings button found');
+                return false;
+            });
+        }
+
+        if (!settingsClicked) {
+            console.warn("⚠️ Caption settings button not found — cannot change language");
+            // Take debug screenshot
+            await page.screenshot({ path: `/tmp/lang-selection-fail-${Date.now()}.png` });
+            return;
+        }
+
+        await page.waitForTimeout(1000);
+        console.log("  ✅ Caption settings panel opened");
+
+        // Step 2: Expand language dropdown if needed
+        let optionsVisible = false;
+
+        const existingOptions = page.locator('[role="option"]');
+        const existingCount = await existingOptions.count().catch(() => 0);
+        console.log(`  📊 Found ${existingCount} [role="option"] elements initially`);
+
+        if (existingCount > 5) {
+            optionsVisible = true;
+        } else {
+            console.log("  🔍 Looking for language dropdown to expand...");
+
+            const dropdownSelectors = [
+                '[role="combobox"]',
+                '[role="listbox"]',
+                '[aria-haspopup="listbox"]',
+                'button[aria-haspopup="listbox"]',
+                'button[aria-expanded="false"]',
+                '[data-panel-id] button',
+                'div[role="dialog"] button',
+                'div[role="dialog"] [role="combobox"]',
+            ];
+
+            for (const sel of dropdownSelectors) {
+                const dropdown = page.locator(sel).first();
+                if (await dropdown.isVisible({ timeout: 800 }).catch(() => false)) {
+                    const text = await dropdown.textContent().catch(() => "");
+                    console.log(`  🔍 Found dropdown: sel="${sel}", text="${text?.trim()?.substring(0, 40)}"`);
+
+                    try {
+                        await dropdown.click({ force: true, timeout: 2000 });
+                    } catch {
+                        await dropdown.evaluate((el: HTMLElement) => el.click());
+                    }
+                    await page.waitForTimeout(800);
+
+                    const newCount = await existingOptions.count().catch(() => 0);
+                    console.log(`  📊 After clicking "${sel}": ${newCount} [role="option"] elements`);
+                    if (newCount > 5) {
+                        optionsVisible = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!optionsVisible) {
+            const allRoles = await page.evaluate(() => {
+                const elems = document.querySelectorAll('[role]');
+                return Array.from(elems).slice(0, 30).map(e => ({
+                    role: e.getAttribute('role'),
+                    text: (e as HTMLElement).innerText?.substring(0, 50),
+                    visible: (e as HTMLElement).offsetHeight > 0,
+                }));
+            });
+            console.log("  🔍 Visible role elements:", JSON.stringify(allRoles.filter(e => e.visible), null, 2));
+        }
+
+        // Step 3: Find and click the target language
+        const result = await page.evaluate((targetLanguage) => {
+            const allOptions = Array.from(document.querySelectorAll('[role="option"]'));
+
+            const firstFive = allOptions.slice(0, 5).map(o => (o as HTMLElement).innerText.trim());
+            const lastFive = allOptions.slice(-5).map(o => (o as HTMLElement).innerText.trim());
+            console.log(`[selectLang] First 5 options: ${JSON.stringify(firstFive)}`);
+            console.log(`[selectLang] Last 5 options: ${JSON.stringify(lastFive)}`);
+
+            // Strategy A: exact match
+            for (const opt of allOptions) {
+                const text = (opt as HTMLElement).innerText.trim();
+                if (text === targetLanguage) {
+                    (opt as HTMLElement).click();
+                    return { success: true, matched: text, strategy: "exact" };
+                }
+            }
+
+            // Strategy B: includes match
+            for (const opt of allOptions) {
+                const text = (opt as HTMLElement).innerText.trim();
+                if (text.includes(targetLanguage) || targetLanguage.includes(text)) {
+                    (opt as HTMLElement).click();
+                    return { success: true, matched: text, strategy: "includes" };
+                }
+            }
+
+            // Strategy C: normalize unicode and compare
+            const normalize = (s: string) => s.normalize("NFKC").replace(/\s+/g, " ").trim();
+            const normalizedTarget = normalize(targetLanguage);
+            for (const opt of allOptions) {
+                const text = normalize((opt as HTMLElement).innerText);
+                if (text === normalizedTarget) {
+                    (opt as HTMLElement).click();
+                    return { success: true, matched: (opt as HTMLElement).innerText.trim(), strategy: "normalized" };
+                }
+            }
+
+            return { success: false, matched: null, strategy: "none", totalOptions: allOptions.length };
+        }, targetLang);
+
+        if (result.success) {
+            console.log(`✅ Caption language set to: "${result.matched}" (strategy: ${result.strategy})`);
+        } else {
+            console.warn(`⚠️ Language "${targetLang}" not found among ${result.totalOptions} options — falling back to English`);
+        }
+
+        await page.waitForTimeout(300);
+
+        // Step 4: Close the settings panel if still open
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(200);
+
+    } catch (err) {
+        console.error(`❌ Failed to set caption language to "${targetLang}":`, err);
+    }
+}
+

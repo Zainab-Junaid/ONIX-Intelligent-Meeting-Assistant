@@ -67,11 +67,15 @@ export async function upsertSpeakerStats(
                 speakingTimeSeconds: Math.round(stat.totalSpeakingTimeSec),
                 wordCount: stat.wordCount,
                 turnCount: stat.interventionCount,
+                questionCount: stat.questionCount || 0,
+                talkToListenRatio: stat.talkToListenRatio,
             },
             update: {
                 speakingTimeSeconds: Math.round(stat.totalSpeakingTimeSec),
                 wordCount: stat.wordCount,
                 turnCount: stat.interventionCount,
+                questionCount: stat.questionCount || 0,
+                talkToListenRatio: stat.talkToListenRatio,
             },
         });
     }
@@ -94,7 +98,8 @@ export async function upsertSpeakerStats(
  */
 export async function upsertMeetingAnalytics(
     meetingId: string,
-    analytics: MeetingAnalyticsData
+    analytics: MeetingAnalyticsData,
+    topicsDiscussed?: string[]
 ): Promise<void> {
     // Get meeting to obtain tenantId
     const meeting = await prisma.meeting.findUnique({
@@ -116,17 +121,73 @@ export async function upsertMeetingAnalytics(
             totalSpeakers: analytics.participantCount,
             totalWords: analytics.totalWordCount,
             participationBalanceScore: analytics.balanceScore / 100, // Convert 0-100 to 0-1
-            // Note: dominantSpeakerId requires User lookup, omit for now
+            topicsDiscussed: topicsDiscussed || [],
         },
         update: {
             totalDurationSeconds: Math.round(analytics.totalDurationSec),
             totalSpeakers: analytics.participantCount,
             totalWords: analytics.totalWordCount,
             participationBalanceScore: analytics.balanceScore / 100,
+            ...(topicsDiscussed ? { topicsDiscussed } : {}),
         },
     });
 
     console.log(`[Upsert] Saved meeting analytics for meeting ${meetingId}`);
+}
+
+// ============================================================================
+// MEETING KEYWORDS UPSERT
+// ============================================================================
+
+/**
+ * Upsert meeting keywords to PostgreSQL.
+ * 
+ * Uses composite (meetingId + keyword) as natural key.
+ * Safe to call multiple times for the same meeting.
+ */
+export async function upsertMeetingKeywords(
+    meetingId: string,
+    keywords: { keyword: string; category: string; relevance: number }[]
+): Promise<void> {
+    if (!keywords || keywords.length === 0) {
+        console.log(`[Upsert] No keywords to save for meeting ${meetingId}`);
+        return;
+    }
+
+    // Get meeting to obtain tenantId
+    const meeting = await prisma.meeting.findUnique({
+        where: { id: meetingId },
+        select: { tenantId: true },
+    });
+
+    if (!meeting?.tenantId) {
+        throw new Error(`Meeting ${meetingId} not found for keywords upsert`);
+    }
+    const tenantId = meeting.tenantId;
+
+    for (const kw of keywords) {
+        await prisma.meetingKeyword.upsert({
+            where: {
+                meetingId_keyword: {
+                    meetingId,
+                    keyword: kw.keyword,
+                },
+            },
+            create: {
+                meetingId,
+                tenantId,
+                keyword: kw.keyword,
+                category: kw.category || 'topic',
+                relevanceScore: kw.relevance || 0.5,
+            },
+            update: {
+                category: kw.category || 'topic',
+                relevanceScore: kw.relevance || 0.5,
+            },
+        });
+    }
+
+    console.log(`[Upsert] Saved ${keywords.length} keywords for meeting ${meetingId}`);
 }
 
 // ============================================================================
@@ -176,11 +237,15 @@ export async function upsertAllAnalytics(
                     speakingTimeSeconds: Math.round(stat.totalSpeakingTimeSec),
                     wordCount: stat.wordCount,
                     turnCount: stat.interventionCount,
+                    questionCount: stat.questionCount || 0,
+                    talkToListenRatio: stat.talkToListenRatio,
                 },
                 update: {
                     speakingTimeSeconds: Math.round(stat.totalSpeakingTimeSec),
                     wordCount: stat.wordCount,
                     turnCount: stat.interventionCount,
+                    questionCount: stat.questionCount || 0,
+                    talkToListenRatio: stat.talkToListenRatio,
                 },
             });
         }

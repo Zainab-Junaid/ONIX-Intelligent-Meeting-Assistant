@@ -29,15 +29,13 @@ export type ActionItemInput = {
   userId?: string;
   meetingTitle?: string;
   item: string;
-  assignedTo?: string;
+  assignedTo?: string | null;
   dueDate?: Date;
+  priority?: 'high' | 'medium' | 'low';
   status?: string;
 };
-/*
-    export type MediaAsset = {
-    meetingId: string;
-    createdAt: Date;
-    type: 'audio' | 'video';
-    storagePath: string;
-    durationSec: number;
-    };*/
+
+export type KeyTopicsResult = {
+  topics: string[];
+  keywords: { keyword: string; category: string; relevance: number }[];
+};

@@ -4,6 +4,15 @@ import { CaptionData } from '../../application/transcription/captionBuffer';
 import { prisma } from '../../lib/prisma';
 import { MeetingStatus } from '../../config/constants';
 import { finalizeTranscript } from '../mongo/transcriptRepo';
+import {
+  finishFlushRun,
+  initializeTranscriptionMetrics,
+  markFlushLockContention,
+  markFlushMongoResult,
+  markFlushPublishResult,
+  startFlushRun,
+  traceEvent,
+} from '../observability/transcriptionMetrics';
 
 /**
  * Flush Worker (Consumer)
@@ -23,6 +32,8 @@ import { finalizeTranscript } from '../mongo/transcriptRepo';
 
 const BUFFER_SIZE_THRESHOLD = parseInt(process.env.BUFFER_SIZE_THRESHOLD || '10', 10);
 const BUFFER_IDLE_TIMEOUT_MS = parseInt(process.env.BUFFER_IDLE_TIMEOUT_MS || '5000', 10);
+/** Flush when we have 1+ segment and this much idle (ms). Keeps transcript visible with few segments (e.g. DOM-block commits). */
+const BUFFER_MIN_IDLE_MS = parseInt(process.env.BUFFER_MIN_IDLE_MS || '2000', 10);
 const WORKER_INTERVAL_MS = parseInt(process.env.WORKER_INTERVAL_MS || '1000', 10);
 const RAW_BUFFER_SIZE_THRESHOLD = parseInt(process.env.RAW_BUFFER_SIZE_THRESHOLD || '20', 10);
 const ACTIVE_MEETINGS_KEY = 'active_meetings';
@@ -131,6 +142,8 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
   const rawBufferKey = `meeting:${meetingId}:raw_buffer`;
   const lastActiveKey = `meeting:${meetingId}:last_active`;
   let lockAcquired = false;
+  let flushRun: ReturnType<typeof startFlushRun> | null = null;
+  let flushRunFinished = false;
 
   try {
     // Check flush conditions
@@ -147,14 +160,22 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
     // Determine if flush is needed
     const shouldFlushBySize = bufferLength >= BUFFER_SIZE_THRESHOLD;
     const shouldFlushByIdle = timeSinceLastActive > BUFFER_IDLE_TIMEOUT_MS;
+    const shouldFlushBySingleSegmentIdle = bufferLength >= 1 && timeSinceLastActive > BUFFER_MIN_IDLE_MS;
 
-    if (!shouldFlushBySize && !shouldFlushByIdle && rawBufferLength < RAW_BUFFER_SIZE_THRESHOLD) {
+    if (!shouldFlushBySize && !shouldFlushByIdle && !shouldFlushBySingleSegmentIdle && rawBufferLength < RAW_BUFFER_SIZE_THRESHOLD) {
       return false; // No flush needed
     }
+
+    flushRun = startFlushRun(meetingId, bufferLength, rawBufferLength);
 
     // CRITICAL: Acquire distributed lock before processing
     lockAcquired = await acquireFlushLock(meetingId);
     if (!lockAcquired) {
+      if (flushRun) {
+        markFlushLockContention(flushRun);
+        finishFlushRun(flushRun);
+        flushRunFinished = true;
+      }
       console.log(
         `[FlushWorker] ⏭️ Skipping meeting ${meetingId} - another worker is processing it`
       );
@@ -179,6 +200,10 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
         }
       } catch (finalizeErr) {
         console.warn(`[FlushWorker] ⚠️ Failed to finalize on empty buffers for ${meetingId}:`, finalizeErr);
+      }
+      if (flushRun) {
+        finishFlushRun(flushRun);
+        flushRunFinished = true;
       }
       return false;
     }
@@ -282,10 +307,16 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
           meetingTitle: firstCaption.meetingTitle
         });
         await redis.publish("meeting:transcript_update", payload);
+        if (flushRun) {
+          markFlushPublishResult(flushRun, true);
+        }
         console.log(
           `[Worker] Published ${segments.length} segments for meeting ${meetingId} to Redis Pub/Sub (real-time dashboard update)`
         );
       } catch (pubError) {
+        if (flushRun) {
+          markFlushPublishResult(flushRun, false);
+        }
         // Don't fail the flush if publish fails - log and continue
         console.error(
           `[Worker] ⚠️ Failed to publish transcript update for meeting ${meetingId}:`,
@@ -301,6 +332,9 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
         firstCaption.meetingTitle,
         createdAt
       );
+      if (flushRun) {
+        markFlushMongoResult(flushRun, true);
+      }
 
       console.log(
         `[FlushWorker] ✅ Successfully flushed ${captionData.length} captions to MongoDB ` +
@@ -327,6 +361,9 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
 
       cleanFlushed = true;
     } catch (mongoError) {
+      if (flushRun) {
+        markFlushMongoResult(flushRun, false);
+      }
       // CRITICAL: Push failed items to Dead Letter Queue
       console.error(
         `[FlushWorker] 🚨 CRITICAL: MongoDB write failed for meeting ${meetingId}. ` +
@@ -424,6 +461,11 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
 
     return cleanFlushed || rawFlushed;
   } catch (error) {
+    traceEvent('flush_meeting_buffer_error', {
+      meetingId,
+      source: 'worker',
+      error: error instanceof Error ? error.message : String(error),
+    });
     console.error(
       `[FlushWorker] ❌ Failed to flush buffer for meeting ${meetingId}:`,
       error
@@ -431,6 +473,9 @@ async function flushMeetingBuffer(meetingId: string): Promise<boolean> {
     // Don't throw - continue processing other meetings
     return false;
   } finally {
+    if (flushRun && !flushRunFinished) {
+      finishFlushRun(flushRun);
+    }
     // CRITICAL: Always release lock in finally block
     if (lockAcquired) {
       await releaseFlushLock(meetingId);
@@ -581,6 +626,7 @@ async function processActiveMeetings(): Promise<void> {
  * - Background service: Use PM2, systemd, etc.
  */
 export async function startFlushWorker(): Promise<void> {
+  initializeTranscriptionMetrics();
   console.log('[FlushWorker] 🚀 Starting flush worker...');
   console.log(`[FlushWorker] Configuration:`);
   console.log(`  - Buffer size threshold: ${BUFFER_SIZE_THRESHOLD} items`);

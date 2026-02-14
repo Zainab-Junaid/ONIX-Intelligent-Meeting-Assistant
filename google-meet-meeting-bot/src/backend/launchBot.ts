@@ -8,7 +8,7 @@ import path from "path";
 const docker = new Docker();
 
 // launch Docker container to run mtg bot
-export async function launchBotContainer(meetingUrl: string, jobId: string, userId?: string, meetingTitle?: string) {
+export async function launchBotContainer(meetingUrl: string, jobId: string, userId?: string, meetingTitle?: string, language?: string) {
   // assign container a unique name using timestamp
   const containerName = `meetingbot-${Date.now()}`;
 
@@ -35,6 +35,7 @@ export async function launchBotContainer(meetingUrl: string, jobId: string, user
     // Use Docker network service names for Redis/MongoDB (not localhost)
     `REDIS_URL=redis://meetingbot-redis:6379`,
     `MONGODB_URI=mongodb://meetingbot-mongo:27017/meeting-transcripts`,
+    `CAPTIONS_LANGUAGE=${language || 'English'}`,
   ];
 
   // Determine auth.json host path for mounting into bot container

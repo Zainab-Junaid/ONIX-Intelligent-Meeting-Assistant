@@ -1,6 +1,6 @@
 import express from "express";
 import { createServer } from "http";
-import { initializeSocketServer } from "../presentation/socket/socketServer";
+import { initializeSocketServer, getSocketIO } from "../presentation/socket/socketServer";
 import cors from "cors";
 import { summarizeTranscript } from "../summarize";
 import {
@@ -20,10 +20,17 @@ import {
   MeetingJobStatus,
 } from "../config/constants";
 import { enqueueMeetingProcessing } from "../infrastructure/queue";
+import {
+  initializeTranscriptionMetrics,
+  markBotDoneCall,
+  traceEvent,
+} from "../infrastructure/observability/transcriptionMetrics";
+import { getRedisClient } from "../config/redis";
 
 // Using singleton prisma client from lib/prisma.ts
 
 const app = express();
+initializeTranscriptionMetrics();
 // turn on CORS for frontend at localhost:5173
 app.use(
   cors({
@@ -47,11 +54,82 @@ function validateMeetLink(url: string) {
   return prefix.test(url);
 }
 
+const BOT_DONE_PROCESSING_TTL_SEC = parseInt(process.env.BOT_DONE_PROCESSING_TTL_SEC || "120", 10);
+const BOT_DONE_COMPLETED_TTL_SEC = parseInt(process.env.BOT_DONE_COMPLETED_TTL_SEC || "604800", 10); // 7 days
+
+function botDoneProcessingKey(meetingId: string): string {
+  return `meeting:${meetingId}:bot_done:processing`;
+}
+
+function botDoneCompletedKey(meetingId: string): string {
+  return `meeting:${meetingId}:bot_done:completed`;
+}
+
+async function tryAcquireBotDoneGuard(meetingId: string, jobId: string): Promise<{
+  mode: "acquired" | "already_completed" | "already_processing" | "no_guard";
+  processingKey: string;
+  completedKey: string;
+}> {
+  const processingKey = botDoneProcessingKey(meetingId);
+  const completedKey = botDoneCompletedKey(meetingId);
+
+  try {
+    const redis = getRedisClient();
+    const completed = await redis.get(completedKey);
+    if (completed) {
+      return { mode: "already_completed", processingKey, completedKey };
+    }
+
+    const lock = await redis.set(
+      processingKey,
+      JSON.stringify({ meetingId, jobId, startedAt: new Date().toISOString() }),
+      "EX",
+      BOT_DONE_PROCESSING_TTL_SEC,
+      "NX"
+    );
+
+    if (lock !== "OK") {
+      return { mode: "already_processing", processingKey, completedKey };
+    }
+
+    return { mode: "acquired", processingKey, completedKey };
+  } catch (error) {
+    console.warn(`[bot-done] ⚠️ Idempotency guard unavailable, continuing without lock:`, error);
+    return { mode: "no_guard", processingKey, completedKey };
+  }
+}
+
+async function markBotDoneCompleted(meetingId: string, processingKey: string, completedKey: string): Promise<void> {
+  try {
+    const redis = getRedisClient();
+    const multi = redis.multi();
+    multi.set(
+      completedKey,
+      JSON.stringify({ meetingId, completedAt: new Date().toISOString() }),
+      "EX",
+      BOT_DONE_COMPLETED_TTL_SEC
+    );
+    multi.del(processingKey);
+    await multi.exec();
+  } catch (error) {
+    console.warn(`[bot-done] ⚠️ Failed to persist completion marker for ${meetingId}:`, error);
+  }
+}
+
+async function releaseBotDoneProcessingGuard(processingKey: string): Promise<void> {
+  try {
+    const redis = getRedisClient();
+    await redis.del(processingKey);
+  } catch (error) {
+    console.warn(`[bot-done] ⚠️ Failed to release processing guard ${processingKey}:`, error);
+  }
+}
+
 // endpoint to start bot with given url
 // Creates Meeting record in PostgreSQL for efficient listing
 // LIFECYCLE: CREATED -> BOT_LAUNCHED -> LIVE -> COMPLETED -> PROCESSING -> PROCESSED
 app.post("/submit-link", async (req, res) => {
-  const { url, jobId: providedJobId, userId, meetingTitle, tenantId } = req.body;
+  const { url, jobId: providedJobId, userId, meetingTitle, tenantId, language } = req.body;
   if (!url) return res.status(400).send(`Missing the URL`);
   if (!validateMeetLink(url)) return res.status(400).send(`Invalid link`);
 
@@ -79,6 +157,7 @@ app.post("/submit-link", async (req, res) => {
         title: meetingTitle || 'Untitled Meeting',
         status: MeetingStatus.CREATED,  // Initial status
         platform: 'google_meet',
+        language: language || 'English',
       },
     });
     console.log(`✅ Meeting lifecycle: Created Meeting (id=${meeting.id}, status=${MeetingStatus.CREATED})`);
@@ -112,7 +191,7 @@ app.post("/submit-link", async (req, res) => {
 
     // Step 6: Launch bot container with meeting ID
     // NOTE: Bot should use meeting.id to tag Redis buffers
-    await launchBotContainer(url, meeting.id, userId, meetingTitle);
+    await launchBotContainer(url, meeting.id, userId, meetingTitle, language);
 
     res.json({
       message: 'Bot started for meeting',
@@ -191,7 +270,50 @@ app.post("/bot-done", async (req, res) => {
   const { jobId, meetingId } = req.body;
   if (!jobId || !meetingId) return res.status(400).send("Missing fields");
 
+  let processingKey = botDoneProcessingKey(meetingId);
+  let completedKey = botDoneCompletedKey(meetingId);
+  let guardAcquired = false;
+
   try {
+    markBotDoneCall(meetingId, jobId);
+    traceEvent("bot_done_endpoint_entered", {
+      meetingId,
+      jobId,
+      source: "backend",
+    });
+
+    const guard = await tryAcquireBotDoneGuard(meetingId, jobId);
+    processingKey = guard.processingKey;
+    completedKey = guard.completedKey;
+
+    if (guard.mode === "already_completed") {
+      traceEvent("bot_done_duplicate_ignored", {
+        meetingId,
+        jobId,
+        source: "backend",
+      });
+      return res.json({
+        message: "Meeting completion already processed",
+        meetingId: jobId,
+        status: MeetingStatus.COMPLETED,
+        alreadyProcessed: true,
+      });
+    }
+
+    if (guard.mode === "already_processing") {
+      traceEvent("bot_done_duplicate_in_progress", {
+        meetingId,
+        jobId,
+        source: "backend",
+      });
+      return res.status(202).json({
+        message: "Meeting completion is already being processed",
+        meetingId: jobId,
+        inProgress: true,
+      });
+    }
+
+    guardAcquired = guard.mode === "acquired";
     console.log(`Bot reported completion for job ${jobId}, meeting ${meetingId}`);
 
     // Step 1: Update Meeting status to COMPLETED in PostgreSQL
@@ -206,6 +328,15 @@ app.post("/bot-done", async (req, res) => {
         },
       });
       console.log(`✅ Meeting lifecycle: Status -> ${MeetingStatus.COMPLETED} (id=${jobId})`);
+
+      // Emit meeting_ended event to all connected dashboard clients
+      const socketIO = getSocketIO();
+      if (socketIO) {
+        socketIO.to(meetingId).emit('meeting_ended', { meetingId, endedAt: new Date().toISOString() });
+        // Also emit to jobId room (frontend may join by either ID)
+        socketIO.to(jobId).emit('meeting_ended', { meetingId: jobId, endedAt: new Date().toISOString() });
+        console.log(`📡 Emitted meeting_ended to rooms: ${meetingId}, ${jobId}`);
+      }
     } catch (meetingError) {
       // Non-fatal: Meeting may not exist if started before lifecycle implementation
       console.warn(`⚠️ Could not update Meeting record (may not exist):`, meetingError);
@@ -276,6 +407,7 @@ app.post("/bot-done", async (req, res) => {
           status: MeetingStatus.COMPLETED,
           processingQueued: true,
         });
+        await markBotDoneCompleted(meetingId, processingKey, completedKey);
         return;
       } catch (queueError) {
         console.error(`❌ Failed to enqueue processing job:`, queueError);
@@ -287,6 +419,9 @@ app.post("/bot-done", async (req, res) => {
     const transcript = await getTranscript(meetingId);
     if (!transcript) {
       console.warn(`Transcript not found for meeting ${meetingId}`);
+      if (guardAcquired) {
+        await releaseBotDoneProcessingGuard(processingKey);
+      }
       return res.status(202).send("Transcript not found yet");
     }
 
@@ -296,8 +431,12 @@ app.post("/bot-done", async (req, res) => {
     console.log(`Transcript is: `);
     console.dir(await getTranscript(meetingId));
     console.log(`Summary is: (see saved row in MeetingSummary)`);
+    await markBotDoneCompleted(meetingId, processingKey, completedKey);
     res.send("Summary completed and saved");
   } catch (err) {
+    if (guardAcquired) {
+      await releaseBotDoneProcessingGuard(processingKey);
+    }
     console.error(`Error processing job ${jobId}:`, err);
     res.status(500).send("Failed to finalize job");
   }

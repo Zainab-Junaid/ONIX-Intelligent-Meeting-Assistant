@@ -6,7 +6,10 @@
     "outDir": "../../dist",
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "types": ["node", "playwright"]
+    "types": [
+      "node",
+      "playwright"
+    ]
   },
   "include": [
     "../bot/**/*.ts",
@@ -14,5 +17,9 @@
     "../models.ts",
     "../storage.ts",
     "../summarize.ts"
+  ],
+  "exclude": [
+    "../playwright/**/extentionCaptionScraper.ts",
+    "../playwright/**/IncrementalcaptionScraper.ts"
   ]
 }

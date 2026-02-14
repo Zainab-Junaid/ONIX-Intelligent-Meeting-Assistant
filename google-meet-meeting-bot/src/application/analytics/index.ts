@@ -27,4 +27,5 @@ export {
     upsertSpeakerStats,
     upsertMeetingAnalytics,
     upsertAllAnalytics,
+    upsertMeetingKeywords,
 } from './analyticsUpserts';

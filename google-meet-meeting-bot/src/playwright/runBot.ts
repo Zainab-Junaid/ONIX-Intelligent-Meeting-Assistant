@@ -30,7 +30,8 @@ import {
   collapsePreviewIfNeeded,
   dismissOverlays,
   waitUntilJoined,
-  ensureCaptionsOn
+  ensureCaptionsOn,
+  selectCaptionLanguage,
 } from "./runBotDecluttered/meetingActions";
 import { scrapeCaptions } from "./runBotDecluttered/captionScraper";
 
@@ -181,6 +182,10 @@ export async function runBot(url: string): Promise<string> {
     // turn captions on
     await ensureCaptionsOn(page);
     console.log("captions visible");
+
+    // select user-chosen caption language (reads CAPTIONS_LANGUAGE env)
+    await selectCaptionLanguage(page);
+    console.log("caption language configured");
 
     // scrape captions
     const mid = await scrapeCaptions(page, meetingId, createdAt);
