@@ -22,13 +22,13 @@ export async function POST(request: NextRequest) {
     }
 
     const token = authHeader.split('Bearer ')[1];
-    
+
     // Verify Firebase token
     const decodedToken = await getAuth().verifyIdToken(token);
     const userId = decodedToken.uid;
 
-    // Get meeting URL and title from request body
-    const { meetingUrl, meetingTitle } = await request.json();
+    // Get meeting URL, title, and language from request body
+    const { meetingUrl, meetingTitle, language } = await request.json();
     if (!meetingUrl) {
       return NextResponse.json({ error: 'Meeting URL required' }, { status: 400 });
     }
@@ -40,10 +40,11 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         url: meetingUrl,
         userId,
-        meetingTitle: meetingTitle || 'Untitled Meeting'
+        meetingTitle: meetingTitle || 'Untitled Meeting',
+        language: language || 'English',
       })
     });
-    
+
     if (!botResponse.ok) {
       throw new Error('Bot failed to start');
     }
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest) {
           meetingId,
         });
       }
-      
+
       // Try to match calendar event (non-blocking)
       try {
         const matchResponse = await fetch(`${request.nextUrl.origin}/api/meetings/match-calendar-event`, {

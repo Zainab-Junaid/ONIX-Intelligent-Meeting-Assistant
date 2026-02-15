@@ -34,6 +34,7 @@ import {
   selectCaptionLanguage,
 } from "./runBotDecluttered/meetingActions";
 import { scrapeCaptions } from "./runBotDecluttered/captionScraper";
+import { getVideoLaunchArgs } from "../config/videoConfig";
 
 // selector used to detect the meeting has ended or bot was removed
 const LEAVE_BANNER_SEL =
@@ -78,14 +79,17 @@ export async function runBot(url: string): Promise<string> {
   fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:35', message: 'auth.json check', data: { authJsonPath, authJsonExists, authJsonSize, cwd: process.cwd() }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
   // #endregion
 
+
+
+  // ... (inside runBot function)
+
   const browser = await chromium.launch({
     headless: true,
     args: [
       "--no-sandbox",
-      "--use-fake-ui-for-media-stream",
-      "--use-fake-device-for-media-stream",
       "--enable-unsafe-swiftshader",
       "--disable-dev-shm-usage",
+      ...getVideoLaunchArgs(), // Inject custom video or default fake device source
     ],
   });
 
@@ -149,9 +153,9 @@ export async function runBot(url: string): Promise<string> {
       await page.goto(url, { waitUntil: "domcontentloaded" });
     }
 
-    // mute mic, turn off camera, clear popup
+    // mute mic, turn off camera (removed), clear popup
     await clickIfVisible(page, 'button[aria-label*="Turn off microphone"]');
-    await clickIfVisible(page, 'button[aria-label*="Turn off camera"]');
+    // await clickIfVisible(page, 'button[aria-label*="Turn off camera"]'); // KEEP CAMERA ON for Orb Video
     await clickIfVisible(page, 'button:has-text("Got it")');
 
     console.log("Current URL:", page.url());

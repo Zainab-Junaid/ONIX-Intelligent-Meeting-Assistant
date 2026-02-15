@@ -43,6 +43,7 @@ export default function Page() {
 
   // Real-time segments for bot meeting view (must be at top level, before any returns)
   const [liveSegments, setLiveSegments] = useState<Array<{ speaker: string; text: string; start?: number; end?: number }>>([])
+  const [meetingEnded, setMeetingEnded] = useState(false)
   const botMeetingSocketRef = useRef<Socket | null>(null)
 
   // Stream segments and load summary/action items for a specific meeting
@@ -93,25 +94,16 @@ export default function Page() {
     socket.on('transcript_update', (data: { meetingId: string; segments: any[]; timestamp: string }) => {
       if (data.meetingId === meetingId) {
         console.log('📝 Received real-time transcript update:', data.segments.length, 'segments')
-        // Update segments with new data (merge with existing to avoid duplicates)
         setSegments(prevSegments => {
           const segmentMap = new Map<string, any>()
-
-          // Add existing segments to map
           prevSegments.forEach(seg => {
-            const key = seg.start !== undefined ? `${seg.start}-${seg.speaker}` : seg.text.substring(0, 50)
+            const key = seg.segmentId || `${seg.speaker}-${seg.text.substring(0, 40)}`
             segmentMap.set(key, seg)
           })
-
-          // Add/update with new segments
           data.segments.forEach(seg => {
-            const key = seg.start !== undefined ? `${seg.start}-${seg.speaker}` : seg.text.substring(0, 50)
-            // Only update if it's a new segment or the text has changed
-            if (!segmentMap.has(key) || segmentMap.get(key).text !== seg.text) {
-              segmentMap.set(key, seg)
-            }
+            const key = seg.segmentId || `${seg.speaker}-${seg.text.substring(0, 40)}`
+            segmentMap.set(key, seg)
           })
-
           return Array.from(segmentMap.values()).sort((a, b) => {
             if (a.start !== undefined && b.start !== undefined) return a.start - b.start
             return 0
@@ -176,24 +168,29 @@ export default function Page() {
     socket.on('transcript_update', (data: { meetingId: string; segments: any[]; timestamp: string }) => {
       if (data.meetingId === botId) {
         console.log('📝 Real-time update for bot meeting:', data.segments.length, 'segments')
-        // Merge segments, avoiding duplicates
+        // Merge segments using segmentId as key (unique per speaking turn)
         setLiveSegments(prev => {
           const segmentMap = new Map<string, any>()
           prev.forEach(seg => {
-            const key = seg.start !== undefined ? `${seg.start}-${seg.speaker}-${seg.text.substring(0, 30)}` : seg.text.substring(0, 50)
+            const key = seg.segmentId || `${seg.speaker}-${seg.text.substring(0, 40)}`
             segmentMap.set(key, seg)
           })
           data.segments.forEach(seg => {
-            const key = seg.start !== undefined ? `${seg.start}-${seg.speaker}-${seg.text.substring(0, 30)}` : seg.text.substring(0, 50)
-            if (!segmentMap.has(key) || segmentMap.get(key).text !== seg.text) {
-              segmentMap.set(key, seg)
-            }
+            const key = seg.segmentId || `${seg.speaker}-${seg.text.substring(0, 40)}`
+            segmentMap.set(key, seg) // always take the latest version
           })
           return Array.from(segmentMap.values()).sort((a, b) => {
             if (a.start !== undefined && b.start !== undefined) return a.start - b.start
             return 0
           })
         })
+      }
+    })
+
+    socket.on('meeting_ended', (data: { meetingId: string }) => {
+      if (data.meetingId === botId) {
+        console.log('🏁 Meeting ended:', data.meetingId)
+        setMeetingEnded(true)
       }
     })
 
@@ -259,6 +256,8 @@ export default function Page() {
 
     // Use live segments if available, otherwise fall back to botMeeting segments
     const displaySegments = liveSegments.length > 0 ? liveSegments : (botMeeting.segments || [])
+    // Meeting is ended if we received the socket event OR if the status indicates completion
+    const isEnded = meetingEnded || ['COMPLETED', 'PROCESSING', 'PROCESSED'].includes((botMeeting as any).status || '')
 
     return (
       <AppShell title={`${botMeeting.title || `Bot Meeting ${botId.substring(0, 8)}...`}`} subtitle={`Created ${new Date((botMeeting as any).createdAtMs ?? botMeeting.createdAt).toLocaleString('en-US', {
@@ -273,7 +272,14 @@ export default function Page() {
         <div className="space-y-4">
           <div className="rounded-lg border p-6 bg-white">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-lg">Meeting Transcript {liveSegments.length > 0 && <span className="text-sm font-normal text-green-600">● Live</span>}</h3>
+              <h3 className="font-semibold text-lg">
+                Meeting Transcript{' '}
+                {isEnded
+                  ? <span className="text-sm font-normal text-gray-500">Ended</span>
+                  : liveSegments.length > 0
+                    ? <span className="text-sm font-normal text-green-600">● Live</span>
+                    : null}
+              </h3>
               {displaySegments.length > 0 && (
                 <div className="text-sm text-muted-foreground">
                   {displaySegments.length} {displaySegments.length === 1 ? 'segment' : 'segments'} • {' '}
@@ -281,7 +287,9 @@ export default function Page() {
                 </div>
               )}
             </div>
-            <SpeakerTranscript segments={displaySegments} />
+            <div className="max-h-[70vh] overflow-y-auto pr-2 scroll-smooth">
+              <SpeakerTranscript segments={displaySegments} meetingEnded={isEnded} isLive={!isEnded && liveSegments.length > 0} />
+            </div>
           </div>
           {botMeeting.meetingUrl && (
             <div className="text-sm text-muted-foreground">

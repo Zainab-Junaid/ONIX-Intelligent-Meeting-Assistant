@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:15
-    container_name: meetingbot-db
+    container_name: meetingbot-postgres
     environment:
       # Credentials come from .env file - DO NOT hardcode
       POSTGRES_USER: ${POSTGRES_USER:-meetingbot}
@@ -33,6 +33,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.be
+    image: laraibzafarlaraib/meetingbot-backend:latest
     container_name: meetingbot-backend
     ports:
       - "3001:3001"
@@ -56,16 +57,13 @@ services:
       - AUTH_JSON_HOST_PATH=${AUTH_JSON_HOST_PATH:-}
     depends_on:
       - postgres
-      - bot
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./auth.json:/app/auth.json
     networks: [meetingbot]
 
   flush-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.be
+    image: laraibzafarlaraib/meetingbot-backend:latest
     container_name: meetingbot-flush-worker
     command: ["node", "src/dist/infrastructure/workers/flushWorker.js"]
     env_file:
@@ -82,9 +80,7 @@ services:
     networks: [meetingbot]
 
   processing-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.be
+    image: laraibzafarlaraib/meetingbot-backend:latest
     container_name: meetingbot-processing-worker
     command: ["node", "src/dist/infrastructure/workers/meetingProcessingWorker.js"]
     env_file:
@@ -100,15 +96,7 @@ services:
     restart: unless-stopped
     networks: [meetingbot]
 
-  bot:
-    build:
-      context: .
-      dockerfile: Dockerfile.bot
-    image: meetingbot-bot
-    entrypoint: ["true"]
-    environment: []
-    volumes: []
-    networks: [meetingbot]
+
 
 volumes:
   pgdata:

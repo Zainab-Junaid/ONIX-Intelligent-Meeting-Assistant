@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -122,6 +123,13 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Urdu / Arabic text styling */
+.font-urdu {
+  font-family: 'Noto Nastaliq Urdu', serif;
+  line-height: 2.2;
+  font-size: 1.05em;
 }
 
 @keyframes v0-spin {
