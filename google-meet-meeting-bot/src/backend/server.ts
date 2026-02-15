@@ -818,6 +818,9 @@ app.get("/list/meetings", async (_req, res) => {
         endTime: true,
         segmentCount: true,
         createdAt: true,
+        analytics: {
+          select: { totalSpeakers: true, totalDurationSeconds: true }
+        }
       }
     });
 
@@ -842,6 +845,8 @@ app.get("/list/meetings", async (_req, res) => {
         startTime: m.startTime?.toISOString() || null,
         endTime: m.endTime?.toISOString() || null,
         segmentCount: m.segmentCount || 0,
+        totalSpeakers: m.analytics?.totalSpeakers ?? 0,
+        totalDurationSeconds: m.analytics?.totalDurationSeconds ?? null,
         // NOTE: segments NOT included for efficiency
         // Use GET /api/meetings/:id/transcript to fetch full transcript
         segments: [],
@@ -858,6 +863,8 @@ app.get("/list/meetings", async (_req, res) => {
           startTime: null,
           endTime: null,
           segmentCount: 0,
+          totalSpeakers: 0,
+          totalDurationSeconds: null,
           segments: [],
         }))
     ];
