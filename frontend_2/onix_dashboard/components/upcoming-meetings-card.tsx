@@ -23,7 +23,7 @@ export function UpcomingMeetingsCard() {
                 ? new Date(event.start.date)
                 : null
         return startDate && startDate >= new Date()
-    }).slice(0, 3) // Show top 3
+    }).slice(0, 1) // Show only the next upcoming meeting
 
     if (authLoading) return null
 
@@ -64,7 +64,7 @@ export function UpcomingMeetingsCard() {
                     <Button
                         onClick={handleConnectCalendar}
                         disabled={isConnecting}
-                        className="rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-semibold w-full"
+                        className="rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-semibold w-full text-sm px-4"
                     >
                         {isConnecting ? (
                             <RefreshCw className="mr-2 size-4 animate-spin" />

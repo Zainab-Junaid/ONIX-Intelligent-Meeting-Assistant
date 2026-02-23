@@ -5,4 +5,4 @@ authOG.json
 **/dist
 *.env
 auth.json
-auth.json
+**/firebase-service-account.json

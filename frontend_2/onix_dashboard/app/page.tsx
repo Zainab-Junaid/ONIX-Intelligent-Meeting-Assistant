@@ -265,8 +265,8 @@ export default function Page() {
                             <CardContent className="p-0">
                                 {dashboardData.recentTranscripts.length > 0 ? (
                                     <div className="divide-y divide-slate-50">
-                                        {dashboardData.recentTranscripts.map((t) => (
-                                            <Link key={t.id} href={t.link} className="flex items-center p-6 hover:bg-slate-50/50 transition-all group relative overflow-hidden">
+                                        {dashboardData.recentTranscripts.map((t, i) => (
+                                            <Link key={`${t.type}-${t.id}-${i}`} href={t.link} className="flex items-center p-6 hover:bg-slate-50/50 transition-all group relative overflow-hidden">
                                                 <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-600 opacity-0 group-hover:opacity-100 transition-opacity" />
 
                                                 <div className="size-14 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 mr-5 group-hover:scale-110 group-hover:bg-blue-600 group-hover:text-white group-hover:shadow-lg group-hover:shadow-blue-200 transition-all duration-300">

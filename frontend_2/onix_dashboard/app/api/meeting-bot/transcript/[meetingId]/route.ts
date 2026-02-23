@@ -8,7 +8,8 @@ function initFirebase() {
   return !!getFirebaseAdmin();
 }
 
-export async function GET(request: NextRequest, { params }: { params: { meetingId: string } }) {
+export async function GET(request: NextRequest, props: { params: Promise<{ meetingId: string }> }) {
+  const params = await props.params;
   try {
     const meetingId = params.meetingId;
     

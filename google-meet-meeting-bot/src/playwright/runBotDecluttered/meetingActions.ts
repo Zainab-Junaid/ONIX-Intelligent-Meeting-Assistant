@@ -47,17 +47,19 @@ export async function clickJoin(page: Page): Promise<void> {
         console.log('ℹ "Continue without microphone and camera" not shown');
     }
 
-    // try related possibilites for joining
+    // Prefer direct join ("Start", "Join now") so we enter the meeting immediately.
+    // "Ask to join" leaves the bot in the lobby until the host admits – use only as fallback.
     const possibleTexts = [
+        "Start",
+        "Start meeting",
         "Join now",
-        "Ask to join",
         "Join meeting",
         "Join call",
         "Join",
         "Done",
         "Continue",
         "Continue to join",
-        "Start meeting",
+        "Ask to join",
     ];
 
     for (const text of possibleTexts) {
@@ -130,24 +132,33 @@ export async function clickJoin(page: Page): Promise<void> {
     await page.waitForTimeout(1500);
 }
 
-// waits until bot is in the call/added to the call
-export async function waitUntilJoined(page: Page, timeoutMs = 60_000) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:1418', message: 'waitUntilJoined entry', data: { timeoutMs, currentUrl: page.url() }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'F' }) }).catch(() => { });
-    // #endregion
-    const inCall = await Promise.race([
-        page.waitForSelector('button[aria-label*="Leave call"]', {
-            timeout: timeoutMs,
-        }),
-        page.waitForSelector("text=You've been admitted", { timeout: timeoutMs }),
-        page.waitForSelector("text=You’re the only one here", {
-            timeout: timeoutMs,
-        }),
-    ]).catch(() => false);
+// Text that indicates we're still in the lobby (Ask to join waiting room), not in the actual call
+const LOBBY_INDICATORS = [
+    "Waiting for the host",
+    "Someone in the meeting needs to let you in",
+    "need to let you in",
+    "You're in the waiting room",
+];
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/7726de41-bcce-4be7-9752-b9df8be12bdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'runBot.ts:1429', message: 'waitUntilJoined result', data: { inCall: !!inCall, currentUrl: page.url() }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'F' }) }).catch(() => { });
-    // #endregion
+// waits until bot is in the call/added to the call (not just in the "Ask to join" lobby)
+export async function waitUntilJoined(page: Page, timeoutMs = 60_000) {
+    const inCall = await page
+        .waitForFunction(
+            (lobbyStrings: string[]) => {
+                const bodyText = document.body.innerText;
+                if (bodyText.includes("You've been admitted") || bodyText.includes("You're the only one here"))
+                    return true;
+                const leaveBtn = document.querySelector(
+                    'button[aria-label*="Leave call"], button[aria-label*="Leave meeting"]'
+                );
+                if (!leaveBtn) return false;
+                const inLobby = lobbyStrings.some((t) => bodyText.includes(t));
+                return !inLobby;
+            },
+            LOBBY_INDICATORS,
+            { timeout: timeoutMs }
+        )
+        .catch(() => null);
 
     if (!inCall) throw new Error("Not admitted within time limit");
 }

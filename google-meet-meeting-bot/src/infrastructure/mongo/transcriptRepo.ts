@@ -496,3 +496,32 @@ export async function getSegmentCountForMeeting(meetingId: string): Promise<numb
     return 0;
   }
 }
+
+/**
+ * Delete a transcript and its raw captions from MongoDB.
+ */
+export async function deleteTranscriptFromMongo(meetingId: string): Promise<boolean> {
+  if (!MeetingTranscriptModel) {
+    try {
+      await initMongoConnection();
+    } catch {
+      console.error('[MongoDB] ❌ Cannot delete transcript - MongoDB not connected');
+      return false;
+    }
+  }
+
+  try {
+    const result = await MeetingTranscriptModel.deleteOne({ meetingId });
+    
+    // Also delete raw captions if model is initialized
+    if (RawCaptionModel) {
+      await RawCaptionModel.deleteMany({ meetingId });
+    }
+    
+    console.log(`[MongoDB] 🗑️ Deleted transcript for meeting ${meetingId}, deleted count: ${result.deletedCount}`);
+    return result.deletedCount === 1;
+  } catch (error) {
+    console.error(`[MongoDB] ❌ Error deleting transcript ${meetingId}:`, error);
+    return false;
+  }
+}

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { CheckSquare } from 'lucide-react'
 import { useAuth } from '@/components/auth-provider'
 import { AppShell } from "@/components/app-shell"
@@ -18,6 +18,9 @@ import { SpeakerTranscript } from '@/components/speaker-transcript'
 import { Mail, Loader2, Edit2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { EmailRecipientsDialog } from '@/components/email-recipients-dialog'
+import { FormattingToolbar } from '@/components/ui/formatting-toolbar'
+import { FloatingAskOnixButton } from '@/components/floating-ask-onix-button'
+import { AskOnixSheet } from '@/components/ask-onix-sheet'
 
 // Helper to convert image URL/Base64 to Data URL for jspdf
 const getImgData = (url: string): Promise<string> => {
@@ -143,6 +146,42 @@ const renderSummaryContent = (text: string) => {
 
   return <div>{elements}</div>;
 };
+
+// Render inline markdown (bold, links) as React nodes for action items and notes
+function renderTextWithMarkdown(
+  text: string,
+  linkClassName?: string,
+  _linkBgClassName?: string
+): React.ReactNode {
+  if (!text || typeof text !== 'string') return text ?? '';
+  const parts: React.ReactNode[] = [];
+  let key = 0;
+  // Split by **bold** and [text](url)
+  const boldRegex = /\*\*([^*]+)\*\*|\[([^\]]+)\]\(([^)]+)\)/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = boldRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(<span key={key++}>{text.slice(lastIndex, match.index)}</span>);
+    }
+    if (match[1] !== undefined) {
+      parts.push(<strong key={key++} className="font-semibold">{match[1]}</strong>);
+    } else {
+      const label = match[2];
+      const href = match[3];
+      parts.push(
+        <a key={key++} href={href} target="_blank" rel="noopener noreferrer" className={linkClassName || 'text-blue-600 underline'}>
+          {label}
+        </a>
+      );
+    }
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push(<span key={key++}>{text.slice(lastIndex)}</span>);
+  }
+  return parts.length > 0 ? <>{parts}</> : text;
+}
 
 
 // Extract sections from summary text based on ## headings
@@ -307,22 +346,34 @@ export default function Page() {
         })
       });
 
-      const data = await response.json();
+      let data: { message?: string; error?: string; details?: string } = {};
+      try {
+        data = await response.json();
+      } catch {
+        // Non-JSON response (e.g. 500 HTML)
+        data = { error: response.statusText || 'Server error' };
+      }
 
       if (response.ok) {
+        const successMessage = data.message || `Summary emailed successfully to ${recipients.length} participant${recipients.length === 1 ? '' : 's'}.`;
         toast({
-          title: "Emails Sent",
-          description: data.message || `Summary emailed to ${recipients.length} participants successfully.`,
+          title: "Success",
+          description: successMessage,
         });
         setIsEmailDialogOpen(false);
       } else {
-        throw new Error(data.error || 'Failed to send email');
+        const errorMessage = data.error || data.details || 'Failed to send summary emails';
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive"
+        });
       }
     } catch (error: any) {
       console.error('Error sending email:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to send summary email.",
+        description: error?.message || "Failed to send summary email. Check your connection and try again.",
         variant: "destructive"
       });
     } finally {
@@ -335,6 +386,148 @@ export default function Page() {
   const socketRef = useRef<Socket | null>(null)
   const botMeetingSocketRef = useRef<Socket | null>(null)
   const [summaryText, setSummaryText] = useState<string>("")
+  const summaryTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const [isAskOnixOpen, setIsAskOnixOpen] = useState(false)
+  
+  const handleFormat = (format: string) => {
+    const textarea = summaryTextareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const hasSelection = start !== end;
+    
+    // Expand selection to include surrounding markup if user selected just the inner text
+    // This is a simple heuristic: if we are toggling BOLD, check if we are inside **...**
+    let s = start;
+    let e = end;
+    
+    const isWrapped = (prefix: string, suffix: string) => {
+        return (
+            (text.substring(s - prefix.length, s) === prefix && text.substring(e, e + suffix.length) === suffix) ||
+            (text.substring(s, s + prefix.length) === prefix && text.substring(e - suffix.length, e) === suffix)
+        );
+    };
+
+    let newText = text;
+    let newCursorPos = end;
+
+    switch (format) {
+      case 'bold':
+        if (isWrapped('**', '**')) {
+            // Remove ** from around selection
+            // Adjust s/e if they included the stars or not
+            const included = text.substring(s, s+2) === '**';
+            if (included) {
+                newText = text.substring(0, s) + text.substring(s+2, e-2) + text.substring(e);
+                newCursorPos = e - 4;
+            } else {
+                newText = text.substring(0, s-2) + text.substring(s, e) + text.substring(e+2);
+                newCursorPos = e - 2;
+            }
+        } else {
+            // Add **
+            const val = text.substring(s, e) || 'bold text';
+            newText = text.substring(0, s) + `**${val}**` + text.substring(e);
+            newCursorPos = hasSelection ? s + val.length + 2 : s + val.length + 2; 
+        }
+        break;
+      case 'italic':
+         if (isWrapped('*', '*')) {
+            const included = text.substring(s, s+1) === '*';
+            if (included) {
+                newText = text.substring(0, s) + text.substring(s+1, e-1) + text.substring(e);
+                newCursorPos = e - 2;
+            } else {
+                newText = text.substring(0, s-1) + text.substring(s, e) + text.substring(e+1);
+                newCursorPos = e - 1;
+            }
+        } else {
+            const val = text.substring(s, e) || 'italic text';
+            newText = text.substring(0, s) + `*${val}*` + text.substring(e);
+            newCursorPos = hasSelection ? s + val.length + 1 : s + val.length + 1;
+        }
+        break;
+      case 'underline':
+        if (isWrapped('<u>', '</u>')) {
+            // Simple unwrap for HTML tags 
+            const prefixLen = 3; 
+            const suffixLen = 4;
+            const included = text.substring(s, s+prefixLen) === '<u>';
+            if (included) {
+                newText = text.substring(0, s) + text.substring(s+prefixLen, e-suffixLen) + text.substring(e);
+                newCursorPos = e - (prefixLen+suffixLen);
+            } else {
+                newText = text.substring(0, s-prefixLen) + text.substring(s, e) + text.substring(e+suffixLen);
+                newCursorPos = e - (prefixLen+suffixLen);
+            }
+        } else {
+            const val = text.substring(s, e) || 'underlined text';
+            newText = text.substring(0, s) + `<u>${val}</u>` + text.substring(e);
+            newCursorPos = hasSelection ? s + val.length + 3 : s + val.length + 3;
+        }
+        break;
+      case 'list':
+      case 'ordered-list':
+        // Lists are line-based so they are trickier to "toggle" accurately without parsing lines
+        // For now, we will just ensure we don't double-prefix if already prefixed
+        const selectedContent = text.substring(s, e);
+        if (format === 'list') {
+            if (selectedContent.startsWith('- ')) {
+                // Remove list
+                const removeRegex = /^- /gm;
+                const clean = selectedContent.replace(removeRegex, '');
+                newText = text.substring(0, s) + clean + text.substring(e);
+                newCursorPos = s + clean.length;
+            } else {
+                // Add list
+                 if (hasSelection && selectedContent.includes('\n')) {
+                    const lines = selectedContent.split('\n');
+                    const newLines = lines.map(l => l.startsWith('- ') ? l : `- ${l}`).join('\n');
+                    newText = text.substring(0, s) + newLines + text.substring(e);
+                    newCursorPos = s + newLines.length;
+                } else {
+                    const prefix = text.substring(0, s).endsWith('\n') || s === 0 ? '- ' : '\n- ';
+                    newText = text.substring(0, s) + prefix + (selectedContent || 'List item') + text.substring(e);
+                    newCursorPos = s + prefix.length + (selectedContent || 9).length;
+                }
+            }
+        } else {
+            // Ordered list
+             if (hasSelection && selectedContent.includes('\n')) {
+                 // re-numbering is hard, just prefix
+                const lines = selectedContent.split('\n');
+                const newLines = lines.map((l, i) => /^\d+\. /.test(l) ? l : `${i+1}. ${l}`).join('\n');
+                newText = text.substring(0, s) + newLines + text.substring(e);
+                newCursorPos = s + newLines.length;
+            } else {
+                const prefix = text.substring(0, s).endsWith('\n') || s === 0 ? '1. ' : '\n1. ';
+                newText = text.substring(0, s) + prefix + (selectedContent || 'List item') + text.substring(e);
+                newCursorPos = s + prefix.length + (selectedContent || 9).length;
+            }
+        }
+        break;
+      case 'align-left':
+      case 'align-center':
+      case 'align-right':
+        // Strip existing divs if any, then wrap
+        // This is complex regex replace, simplified for now: just wrap
+        // Ideally we'd remove *any* align div around this text first
+        const alignType = format.replace('align-', '');
+        newText = text.substring(0, s) + `<div align="${alignType}">${text.substring(s, e) || 'content'}</div>` + text.substring(e);
+        break;
+    }
+
+    textarea.value = newText;
+    textarea.focus();
+    // Setting selection range is a bit buggy with simple string manip but tries to keep cursor at end of formatted text
+    try {
+        textarea.setSelectionRange(newCursorPos, newCursorPos);
+    } catch (e) {
+        // ignore
+    }
+  };
   const [actionItems, setActionItems] = useState<Array<{ id: string; text: string; assignedTo?: string; dueDate?: any }>>([])
   // Bot specific state
   const [botActionItems, setBotActionItems] = useState<any[]>([])
@@ -681,24 +874,48 @@ export default function Page() {
 
   // Stream segments and load summary/action items for a specific meeting
   useEffect(() => {
-    if (!meetingId) return
-    // For a specific meeting, load segments and summary via backend endpoints
-    fetch('/api/meeting-bot/meetings')
-      .then(r => r.json())
-      .then((rows: any[]) => {
-        const mtg = rows.find(r => r.meetingId === meetingId)
-        if (mtg) {
-          setSegments(Array.isArray(mtg.segments) ? mtg.segments : [])
-        }
-      }).catch(() => setSegments([]))
+    if (!meetingId || !authUser) return
 
-    fetch('/api/meeting-bot/summaries')
-      .then(r => r.json())
-      .then((rows: any[]) => {
-        const s = rows.find(r => r.meetingId === meetingId)
-        setSummaryText(s?.summaryText || '')
-      }).catch(() => setSummaryText(''))
-  }, [meetingId])
+    let cancelled = false
+    const run = async () => {
+      const token = await authUser.getIdToken().catch(() => null)
+      if (!token || cancelled) return
+
+      const headers = { Authorization: `Bearer ${token}` }
+
+      const meetingsRes = await fetch('/api/meeting-bot/meetings', { headers })
+      const meetingsText = await meetingsRes.text()
+      if (cancelled) return
+      if (meetingsRes.ok) {
+        try {
+          const rows = JSON.parse(meetingsText) as any[]
+          const mtg = Array.isArray(rows) ? rows.find((r: any) => r.meetingId === meetingId) : null
+          if (mtg && !cancelled) setSegments(Array.isArray(mtg.segments) ? mtg.segments : [])
+        } catch {
+          setSegments([])
+        }
+      } else {
+        setSegments([])
+      }
+
+      const summariesRes = await fetch('/api/meeting-bot/summaries', { headers })
+      const summariesText = await summariesRes.text()
+      if (cancelled) return
+      if (summariesRes.ok) {
+        try {
+          const rows = JSON.parse(summariesText) as any[]
+          const s = Array.isArray(rows) ? rows.find((r: any) => r.meetingId === meetingId) : null
+          if (!cancelled) setSummaryText(s?.summaryText ?? '')
+        } catch {
+          setSummaryText('')
+        }
+      } else {
+        setSummaryText('')
+      }
+    }
+    run()
+    return () => { cancelled = true }
+  }, [meetingId, authUser])
 
   // Fetch data for Bot Meeting & Connect Socket
   useEffect(() => {
@@ -1260,9 +1477,8 @@ export default function Page() {
                           className="gap-2"
                           onClick={() => {
                             // Save the edited summary from the textarea
-                            const textarea = document.getElementById('summary-edit-textarea') as HTMLTextAreaElement;
-                            if (textarea) {
-                              setSummaryText(textarea.value);
+                            if (summaryTextareaRef.current) {
+                              setSummaryText(summaryTextareaRef.current.value);
                             }
                             setIsEditingSummary(false);
                           }}
@@ -1296,11 +1512,15 @@ export default function Page() {
                 </div>
                 {summaryText ? (
                   isEditingSummary ? (
-                    <textarea
-                      id="summary-edit-textarea"
-                      defaultValue={summaryText}
-                      className="w-full min-h-[400px] p-4 border rounded-lg text-sm font-mono bg-slate-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-y"
-                    />
+                    <div className="space-y-0">
+                        <FormattingToolbar onFormat={handleFormat} className="rounded-t-lg border-b-0" />
+                        <textarea
+                        ref={summaryTextareaRef}
+                        id="summary-edit-textarea"
+                        defaultValue={summaryText}
+                        className="w-full min-h-[400px] p-4 border rounded-b-lg rounded-t-none text-sm font-mono bg-slate-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-y"
+                        />
+                    </div>
                   ) : (
                     <>
                       {/* Dynamic filter buttons based on actual headings */}
@@ -1676,6 +1896,15 @@ export default function Page() {
             defaultRecipients={attendees}
             isLoading={isSendingEmail || isFetchingAttendees}
           />
+
+          <AskOnixSheet
+            open={isAskOnixOpen}
+            onOpenChange={setIsAskOnixOpen}
+            meetingId={botId}
+            meetingTitle={botMeeting.title || `Bot Meeting ${botId.substring(0, 8)}...`}
+            segments={liveSegments.length > 0 ? liveSegments : segments}
+          />
+          {!isAskOnixOpen && <FloatingAskOnixButton onClick={() => setIsAskOnixOpen(true)} />}
         </div>
       </AppShell>
     )
@@ -1686,9 +1915,9 @@ export default function Page() {
     <AppShell title="Transcripts" subtitle="Auto-captured from meetings Onix joins">
       <div className="space-y-6">
         <Tabs defaultValue="bot" className="w-full">
-          <TabsList className="w-full h-12">
-            <TabsTrigger value="bot" className="text-base flex-1 whitespace-nowrap">Bot Meetings</TabsTrigger>
-            <TabsTrigger value="extension" className="text-base flex-1 whitespace-nowrap">Extension Meetings</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-2 h-12">
+            <TabsTrigger value="bot" className="text-base">Bot Meetings</TabsTrigger>
+            <TabsTrigger value="extension" className="text-base">Extension Meetings</TabsTrigger>
           </TabsList>
 
           <TabsContent value="bot" className="space-y-4">

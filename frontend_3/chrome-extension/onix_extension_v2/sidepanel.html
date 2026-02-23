@@ -1,0 +1,921 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Onix Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      background: #f8fafc;
+      height: 100vh;
+      overflow: hidden;
+      font-size: 14px;
+      color: #192038;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px;
+      width: 360px;
+      height: 100vh;
+      max-height: 100vh;
+      overflow: hidden;
+      background: #f8fafc;
+      box-sizing: border-box;
+    }
+
+    .panel-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #192038;
+      letter-spacing: -0.02em;
+      margin: 0;
+      flex-shrink: 0;
+    }
+
+    textarea {
+      width: 100%;
+      height: 240px;
+      font-family: inherit;
+      font-size: 13px;
+    }
+
+    button {
+      font-family: inherit;
+      padding: 8px 14px;
+      border-radius: 10px;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .muted {
+      color: #64748b;
+      font-size: 13px;
+      font-weight: 400;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      font-family: inherit;
+      font-size: 13px;
+      color: #192038;
+      box-sizing: border-box;
+    }
+    .field-block {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .field-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748b;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .email-chips-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .email-chips-inner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      min-height: 28px;
+      padding: 4px 8px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .email-chips-inner:focus-within {
+      border-color: #2B6CB0;
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(43, 108, 176, 0.2);
+    }
+    .email-chips-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      align-items: center;
+    }
+    .email-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 6px 2px 4px;
+      background: #e0f2fe;
+      color: #0369a1;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .email-chip-icon {
+      width: 12px;
+      height: 12px;
+      flex-shrink: 0;
+      opacity: 0.9;
+    }
+    .email-chip-remove {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: #0369a1;
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 14px;
+      line-height: 1;
+      margin-left: 2px;
+    }
+    .email-chip-remove:hover {
+      background: rgba(3, 105, 161, 0.15);
+      color: #0c4a6e;
+    }
+    .email-input {
+      flex: 1;
+      min-width: 80px;
+      border: none !important;
+      outline: none !important;
+      padding: 2px 0 !important;
+      font-size: 12px !important;
+      background: transparent !important;
+      box-shadow: none !important;
+    }
+    .email-input::placeholder {
+      color: #94a3b8;
+    }
+    .email-recipient-count {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+    .transcript-section {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+      min-height: 0;
+    }
+    .transcript-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .transcript-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #334155;
+      letter-spacing: 0.05em;
+    }
+    .transcript-icon {
+      width: 16px;
+      height: 16px;
+      color: #2B6CB0;
+    }
+    .transcript-placeholder {
+      text-align: center;
+      padding: 16px 8px;
+      font-size: 12px;
+    }
+    input[type="text"]::placeholder {
+      color: #94a3b8;
+    }
+    #title {
+      width: 180px;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+    /* Guest mode: full-width meeting title */
+    .wrap.guest-mode #title {
+      width: 100%;
+    }
+
+    /* Transcript styling – with scroller in box, flex to fill */
+    .transcript-container {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: #fff;
+      font-size: 12px;
+      line-height: 1.45;
+      font-family: inherit;
+      -webkit-overflow-scrolling: touch;
+    }
+    .transcript-container::-webkit-scrollbar {
+      width: 8px;
+    }
+    .transcript-container::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 4px;
+    }
+    .transcript-container::-webkit-scrollbar-thumb {
+      background: #2B6CB0;
+      border-radius: 4px;
+    }
+    .transcript-container::-webkit-scrollbar-thumb:hover {
+      background: #234e8c;
+    }
+
+    .transcript-entry {
+      margin-bottom: 8px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: white;
+      border-left: 3px solid #007bff;
+    }
+
+    .speaker-name {
+      font-weight: bold;
+      color: #007bff;
+      margin-right: 8px;
+    }
+
+    .transcript-text {
+      color: #333;
+    }
+
+    .timestamp {
+      font-size: 11px;
+      color: #999;
+      float: right;
+    }
+
+    /* Main tabs (Signed In only): Live Transcript | Ask Onix – at top, connected, extension blue */
+    .main-tabs {
+      display: none;
+      margin-top: 0;
+      margin-bottom: 6px;
+      width: 100%;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #e2e8f0;
+      background: #e2e8f0;
+    }
+    .main-tabs.visible {
+      display: flex;
+    }
+    .main-tab-btn {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 8px 10px;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      color: #64748b;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+    .main-tab-btn:first-child {
+      border-right: 1px solid #e2e8f0;
+    }
+    .main-tab-btn:hover {
+      background: #f1f5f9;
+      color: #334155;
+    }
+    .main-tab-btn.active {
+      background: #2B6CB0;
+      color: #fff;
+    }
+    .main-tab-btn.active:hover {
+      background: #234e8c;
+      color: #fff;
+    }
+    .main-tab-btn .tab-icon {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+    .tab-panel {
+      display: none;
+    }
+    .tab-panel.active {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .connection-status {
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 500;
+      text-align: center;
+      font-family: inherit;
+    }
+
+    .status-connected {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    .status-disconnected {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    .status-processing {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeaa7;
+    }
+
+    /* Guest badge – dashboard pill style */
+    .guest-badge {
+      display: inline-block;
+      background: #2B6CB0;
+      color: #fff;
+      padding: 3px 10px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-left: 8px;
+      letter-spacing: 0.02em;
+    }
+
+    /* Primary buttons – dashboard style (solid blue, white text) */
+    .guest-signin-btn,
+    .sign-in-btn-styled,
+    .sign-out-btn-styled {
+      background: #2B6CB0 !important;
+      color: #fff !important;
+      border: none !important;
+      font-weight: 600;
+      border-radius: 10px;
+      padding: 8px 16px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      transition: background 0.15s ease, box-shadow 0.15s ease;
+    }
+    .guest-signin-btn:hover,
+    .sign-in-btn-styled:hover,
+    .sign-out-btn-styled:hover {
+      background: #234e8c !important;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+    }
+
+    /* Continue as Guest – dashboard secondary (white + border) */
+    .guest-btn {
+      background: #fff;
+      color: #334155;
+      border: 1px solid #e2e8f0;
+      font-weight: 500;
+      border-radius: 10px;
+    }
+
+    .guest-btn:hover {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+      color: #334155;
+    }
+
+    /* Auth toggle: Inspiration style – pill-shaped segmented control (Guest | Sign in) */
+    .auth-toggle {
+      display: inline-flex;
+      width: auto;
+      min-width: 170px;
+      height: 34px;
+      border-radius: 17px;
+      background: #2B6CB0;
+      padding: 3px;
+      box-sizing: border-box;
+      border: 1px solid #2B6CB0;
+    }
+    .auth-toggle-thumb {
+      display: none;
+    }
+    .auth-toggle-option {
+      flex: 1;
+      min-width: 70px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 18px;
+      background: transparent;
+      border: none;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      position: relative;
+      z-index: 1;
+      border-radius: 17px;
+      transition: all 0.2s ease;
+    }
+    .auth-toggle-option:hover {
+      color: rgba(255,255,255,0.95);
+    }
+    /* Guest selected: white bg + blue border/text */
+    .auth-toggle.guest-selected #guestModeBtn {
+      background: #fff !important;
+      color: #2B6CB0 !important;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+    }
+    .auth-toggle.guest-selected #guestModeBtn:hover {
+      background: #f8fafc !important;
+      color: #2B6CB0 !important;
+    }
+    .auth-toggle.guest-selected #signInBtn {
+      background: transparent;
+      color: #fff;
+    }
+    .auth-toggle.guest-selected #signInBtn:hover {
+      color: rgba(255,255,255,0.95);
+    }
+    /* Sign in selected: Sign in gets white, Guest gets blue */
+    .auth-toggle.signin-selected #signInBtn {
+      background: #fff !important;
+      color: #2B6CB0 !important;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+    }
+    .auth-toggle.signin-selected #signInBtn:hover {
+      background: #f8fafc !important;
+      color: #2B6CB0 !important;
+    }
+    .auth-toggle.signin-selected #guestModeBtn {
+      background: transparent;
+      color: #fff;
+    }
+    .auth-toggle.signin-selected #guestModeBtn:hover {
+      color: rgba(255,255,255,0.95);
+    }
+    .auth-toggle-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .auth-toggle-row .auth-toggle {
+      flex: 0 0 auto;
+    }
+
+    /* Capture toggle: Start | Stop (same style as auth toggle) */
+    .capture-toggle {
+      display: inline-flex;
+      position: relative;
+      width: auto;
+      min-width: 140px;
+      height: 32px;
+      border-radius: 16px;
+      background: #2B6CB0;
+      padding: 4px;
+      box-sizing: border-box;
+    }
+    .capture-toggle-thumb {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: calc(50% - 3px);
+      height: calc(100% - 6px);
+      background: #fff;
+      border-radius: 13px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      transition: left 0.25s ease;
+      pointer-events: none;
+    }
+    .capture-toggle.capture-started .capture-toggle-thumb {
+      left: calc(50% + 3px);
+    }
+    .capture-toggle-option {
+      flex: 1;
+      min-width: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 12px;
+      background: none;
+      border: none;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      position: relative;
+      z-index: 1;
+      transition: color 0.2s ease;
+    }
+    .capture-toggle-option:hover:not(:disabled) {
+      color: rgba(255,255,255,0.95);
+    }
+    .capture-toggle-option:disabled {
+      cursor: not-allowed;
+      opacity: 0.85;
+    }
+    /* Start text = blue when thumb is on it (default state) */
+    .capture-toggle .capture-toggle-option:first-child,
+    .capture-toggle #startBtn:not(:disabled) {
+      color: #2B6CB0 !important;
+    }
+    .capture-toggle #startBtn:hover:not(:disabled) {
+      color: #2B6CB0 !important;
+    }
+    .capture-toggle .capture-toggle-option:first-child:disabled {
+      color: #94a3b8 !important;
+    }
+    .capture-toggle.capture-started .capture-toggle-option:first-child {
+      color: #fff !important;
+    }
+    .capture-toggle.capture-started .capture-toggle-option:last-child {
+      color: #2B6CB0;
+    }
+    .capture-toggle.capture-started .capture-toggle-option:last-child:disabled {
+      color: #94a3b8;
+    }
+
+    /* Keep Start/Stop toggle + Get Summary on one line */
+    .row-action-buttons {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 6px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .row-action-buttons .capture-toggle {
+      flex: 0 0 auto;
+    }
+    /* Get Summary (guest mode): same shape/size as toggle button */
+    .row-action-buttons .btn-download-onix,
+    #getSummaryRow .btn-download-onix {
+      flex: 0 0 auto;
+      width: auto;
+      min-width: 120px;
+      height: 32px;
+      border-radius: 16px;
+      padding: 0 12px;
+      font-size: 12px;
+    }
+    .row-action-buttons .btn-download-onix .btn-icon {
+      width: 16px;
+      height: 16px;
+    }
+
+    /* Pulse animation for Start button */
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.5;
+      }
+    }
+
+    .btn-loading {
+      animation: pulse 1.5s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    /* Primary action buttons – dashboard style (solid blue, white text + icon) */
+    .btn-primary-onix {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 10px;
+      border: none;
+      background: #2B6CB0;
+      color: #fff;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      transition: background 0.15s ease, box-shadow 0.15s ease;
+    }
+    .btn-primary-onix:hover:not(:disabled) {
+      background: #234e8c;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+      color: #fff;
+    }
+    .btn-primary-onix:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    /* Stop Capture: light red effect (active and disabled) */
+    .btn-stop-onix {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 10px;
+      border: 1px solid #f5c6cb;
+      background: #f8d7da;
+      color: #721c24;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .btn-stop-onix:hover:not(:disabled) {
+      background: #f5c6cb;
+      border-color: #f1aeb5;
+      color: #721c24;
+    }
+    .btn-stop-onix:disabled {
+      cursor: not-allowed;
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .btn-download-onix {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 10px;
+      border: none;
+      background: #2B6CB0;
+      color: #fff;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      transition: background 0.15s ease, box-shadow 0.15s ease;
+    }
+    .btn-download-onix:hover:not(:disabled) {
+      background: #234e8c;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+      color: #fff;
+    }
+    .btn-icon {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+    .btn-paste-dashboard {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: #f1f5f9 !important;
+      color: #475569 !important;
+      border: 1px solid #e2e8f0 !important;
+      border-radius: 20px;
+      font-weight: 500;
+      font-size: 13px;
+      padding: 0 14px;
+      min-width: 110px;
+      height: 36px;
+      box-shadow: none;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn-paste-dashboard:hover:not(:disabled) {
+      background: #e2e8f0 !important;
+      border-color: #cbd5e1 !important;
+      color: #334155 !important;
+    }
+    .btn-paste-dashboard .btn-icon {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+
+    /* Signed-in profile card (image 2 style) */
+    #signedInSection {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #signedInSection.visible {
+      display: flex;
+      flex-shrink: 0;
+    }
+    .profile-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .profile-avatar {
+      width: 36px;
+      height: 36px;
+      min-width: 36px;
+      border-radius: 50%;
+      background: #2B6CB0;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .profile-avatar img {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    .profile-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .profile-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #192038;
+      line-height: 1.3;
+    }
+    .profile-access {
+      font-size: 12px;
+      color: #64748b;
+      font-weight: 400;
+      margin-top: 2px;
+    }
+    .profile-signout-btn {
+      width: 40px;
+      height: 36px;
+      min-width: 40px;
+      min-height: 36px;
+      border-radius: 10px;
+      border: none;
+      background: transparent;
+      color: #2B6CB0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s, color 0.15s;
+    }
+    .profile-signout-btn:hover {
+      background: #e8f0fa;
+      color: #2B6CB0;
+    }
+    .profile-signout-btn svg {
+      width: 28px;
+      height: 28px;
+    }
+  </style>
+  <script src="vendor/firebase/firebase-app-compat.js"></script>
+  <script src="vendor/firebase/firebase-auth-compat.js"></script>
+  <script src="vendor/firebase/firebase-firestore-compat.js"></script>
+  <!-- Firebase Storage - will be loaded dynamically if needed -->
+</head>
+
+<body>
+  <div id="wrap" class="wrap">
+    <h1 class="panel-title">Onix Meeting Assistant</h1>
+    <div id="auth" class="muted" style="font-size: 12px; flex-shrink: 0;">Not signed in</div>
+    <div class="row auth-toggle-row" id="guestSignInRow">
+      <div id="authToggle" class="auth-toggle guest-selected" role="group" aria-label="Sign in or continue as guest">
+        <span class="auth-toggle-thumb" id="authToggleThumb" aria-hidden="true"></span>
+        <button type="button" id="guestModeBtn" class="auth-toggle-option" aria-pressed="true">Guest</button>
+        <button type="button" id="signInBtn" class="auth-toggle-option" aria-pressed="false">Sign in</button>
+      </div>
+    </div>
+    <div id="signedInSection">
+      <div class="profile-card">
+        <div class="profile-avatar" id="profileAvatar"></div>
+        <div class="profile-info">
+          <div class="profile-name" id="profileName"></div>
+          <div class="profile-access">Full access</div>
+        </div>
+        <button type="button" id="signOutBtn" class="profile-signout-btn" title="Sign out" aria-label="Sign out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+        </button>
+      </div>
+    </div>
+    <!-- Tabs at top (Signed In only): Live Transcript | Ask Onix -->
+    <div id="mainTabBar" class="main-tabs" role="tablist">
+      <button type="button" id="tabBtnLiveTranscript" class="main-tab-btn active" role="tab" aria-selected="true">Live Transcript</button>
+      <button type="button" id="tabBtnAskOnix" class="main-tab-btn" role="tab" aria-selected="false">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/><path d="M7 9h2v2H7zm4 0h2v2h-2zm4 0h2v2h-2z" opacity=".7"/></svg>
+        Ask Onix
+      </button>
+    </div>
+    <div id="tabPanelLiveTranscript" class="tab-panel active">
+      <div class="field-block">
+        <label class="field-label" for="title">MEETING TITLE</label>
+        <input id="title" type="text" placeholder="Meeting title" />
+      </div>
+      <div class="field-block row" id="emailListRow">
+        <div class="field-block" style="flex: 1;">
+          <label class="field-label">ADD EMAILS OF PARTICIPANTS</label>
+          <div class="email-chips-wrapper">
+            <div class="email-chips-inner">
+              <input type="hidden" id="emailList" value="" />
+              <div id="emailChipsContainer" class="email-chips-container"></div>
+              <input type="text" id="emailInput" class="email-input" placeholder="Add emails of participants" autocomplete="off" />
+            </div>
+            <span id="emailRecipientCount" class="email-recipient-count"></span>
+          </div>
+        </div>
+      </div>
+      <div class="row" style="align-items: center; margin-bottom: 2px; flex-shrink: 0;">
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; flex: 1;">
+          <input type="checkbox" id="recordMeetingCheckbox" style="width: 14px; height: 14px;" />
+          <span><strong>Screen Record Meeting</strong></span>
+        </label>
+      </div>
+      <div class="row row-action-buttons">
+        <div id="captureToggle" class="capture-toggle" role="group" aria-label="Start or stop capture">
+          <span class="capture-toggle-thumb" aria-hidden="true"></span>
+          <button type="button" id="startBtn" class="capture-toggle-option" aria-pressed="true">Start</button>
+          <button type="button" id="stopBtn" class="capture-toggle-option" aria-pressed="false" disabled>Stop</button>
+        </div>
+        <span id="addImageRow">
+          <button id="pasteImageBtn" class="btn-paste-dashboard" type="button">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 4V1h2v3h3v2H5v3H3V6H0V4h3zm3 6V7h3V4h7l1.83 2H21c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H5c-1.1 0-2-.9-2-2V10h3zm7 9c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-3.2-5c0 1.77 1.43 3.2 3.2 3.2s3.2-1.43 3.2-3.2-1.43-3.2-3.2-3.2-3.2 1.43-3.2 3.2z"/></svg>
+            Add Image
+          </button>
+        </span>
+        <span id="getSummaryRow" style="display: none;">
+          <button id="downloadSummaryBtn" class="btn-download-onix" type="button">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 20v2h14v-2H5z"/></svg>
+            Get Summary
+          </button>
+        </span>
+        <button id="saveBtn" type="button" style="display: none;">Save</button>
+        <button id="downloadBtn" type="button" style="display: none;">Download</button>
+      </div>
+      <div id="noteInputContainer" style="display: none; margin-top: 8px;">
+        <div id="imagePreview" style="margin-bottom: 8px; max-width: 100%; display: none;">
+          <img id="previewImage"
+            style="max-width: 100%; max-height: 200px; border-radius: 4px; border: 1px solid #ccc;" />
+        </div>
+        <textarea id="noteTextInput" placeholder="Add a caption for this image (optional)..."
+          style="width: 100%; min-height: 60px; padding: 6px 8px; border-radius: 8px; border: 1px solid #ccc; font-size: 13px; resize: vertical;"></textarea>
+        <div class="row" style="margin-top: 4px;">
+          <button id="saveNoteBtn"
+            style="flex: 1; background: #007bff; color: white; border-color: #007bff;">Save</button>
+          <button id="cancelNoteBtn"
+            style="flex: 1; background: #6c757d; color: white; border-color: #6c757d;">Cancel</button>
+        </div>
+      </div>
+      <div id="connectionStatus" class="connection-status status-disconnected" style="display: none;">Disconnected</div>
+      <div class="transcript-section">
+        <div class="transcript-header">
+          <span class="transcript-label">LIVE TRANSCRIPT</span>
+          <svg class="transcript-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/></svg>
+        </div>
+        <div id="transcript" class="transcript-container">
+          <div class="muted transcript-placeholder">Live transcript will appear here...<br><span style="font-size: 11px; margin-top: 4px; display: block; color: #94a3b8;">Press Start to begin recording</span></div>
+        </div>
+      </div>
+      <div id="status" class="muted" style="font-size: 11px; flex-shrink: 0;"></div>
+      <div id="saveStatus" style="font-size: 10px; color: #666; margin-top: 2px; min-height: 14px; flex-shrink: 0;"></div>
+    </div>
+    <div id="tabPanelAskOnix" class="tab-panel">
+      <div id="liveQaSection" style="margin-top: 0; padding-top: 0; border-top: none;">
+        <div style="font-weight: 600; margin-bottom: 6px; font-size: 13px;">Ask about this meeting</div>
+        <p class="muted" style="font-size: 11px; margin-bottom: 6px;">e.g. What's being discussed? What did [name] say about [topic]?</p>
+        <input id="liveQaInput" type="text" placeholder="Type your question..." style="width: 100%; padding: 8px 12px; border-radius: 10px; border: 1px solid #e2e8f0; font-size: 13px; margin-bottom: 6px;" />
+        <button id="liveQaAskBtn" style="padding: 8px 14px; border-radius: 10px; background: #2B6CB0; color: #fff; border: none; font-weight: 600; cursor: pointer; font-size: 13px;">Ask</button>
+        <div id="liveQaAnswer" style="margin-top: 8px; padding: 8px; background: #f0f7ff; border-radius: 8px; font-size: 12px; line-height: 1.4; white-space: pre-wrap; min-height: 24px; max-height: 160px; overflow-y: auto;"></div>
+        <div id="liveQaError" style="margin-top: 4px; font-size: 11px; color: #721c24;"></div>
+      </div>
+    </div>
+  </div>
+  <script src="sidepanel.js"></script>
+</body>
+
+</html>

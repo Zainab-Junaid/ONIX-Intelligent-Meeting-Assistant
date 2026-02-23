@@ -37,12 +37,53 @@ export async function POST(request: NextRequest) {
     const db = admin.firestore();
     
     // 1. Get meeting doc
-    const meetingDoc = await db.collection('meetings').doc(meetingId).get();
-    if (!meetingDoc.exists) {
-        return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
+    let meetingDoc = await db.collection('meetings').doc(meetingId).get();
+    let meetingData = meetingDoc.exists ? meetingDoc.data() : null;
+
+    // Fallback: If not in Firestore, try to fetch from Bot Backend and sync
+    if (!meetingData) {
+        console.log(`⚠️ Meeting ${meetingId} not found in Firestore, attempting to fetch from Bot Backend...`);
+        try {
+            const { getBackendUrl } = await import('@/lib/backend');
+            const backendUrl = getBackendUrl();
+            const res = await fetch(`${backendUrl}/list/meetings`, { 
+                cache: 'no-store',
+                signal: AbortSignal.timeout(5000) 
+            });
+            
+            if (res.ok) {
+                const allMeetings = await res.json();
+                const backendMeeting = allMeetings.find((m: any) => m.meetingId === meetingId);
+                
+                if (backendMeeting) {
+                    console.log(`✅ Found meeting ${meetingId} in Bot Backend, syncing to Firestore...`);
+                    
+                    // Construct meeting object for Firestore
+                    const newMeetingData = {
+                        meetingId: backendMeeting.meetingId,
+                        userId: backendMeeting.userId, // Important for owner check
+                        title: backendMeeting.title || 'Untitled Meeting',
+                        meetingUrl: backendMeeting.meetingUrl,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                        status: backendMeeting.status || 'ended',
+                        lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
+                    };
+
+                    await db.collection('meetings').doc(meetingId).set(newMeetingData, { merge: true });
+                    meetingData = newMeetingData;
+                }
+            }
+        } catch (backendError) {
+            console.error('Failed to fetch/sync from backend:', backendError);
+        }
+    }
+
+    if (!meetingData) {
+        console.warn(`⚠️ Meeting ${meetingId} still not found after fallback checks. Returning empty attendees list to allow manual entry.`);
+        // Return empty attendees instead of 404 so frontend UI allows manual entry
+        return NextResponse.json({ attendees: [], warning: 'Meeting details not found' });
     }
     
-    const meetingData = meetingDoc.data();
     let calendarEventId = meetingData?.calendarEventId;
     const meetingUrl = meetingData?.meetingUrl;
 

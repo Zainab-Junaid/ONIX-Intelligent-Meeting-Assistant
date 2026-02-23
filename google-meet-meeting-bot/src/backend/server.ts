@@ -10,6 +10,7 @@ import {
   saveSummary,
   getActionItems,
   updateMeetingStatus,
+  deleteMeeting,
 } from "../storage";
 import { launchBotContainer } from "./launchBot";
 import { prisma } from "../lib/prisma";
@@ -874,6 +875,33 @@ app.get("/list/meetings", async (_req, res) => {
     console.error("/list/meetings error:", e instanceof Error ? e.message : e);
     if (e instanceof Error && e.stack) console.error(e.stack);
     res.status(500).json({ error: "failed to load meetings", details: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+// Delete a meeting (id can be Postgres id or mongoTranscriptId, to match list/meetings response)
+app.delete("/meetings/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    // Resolve to Postgres meeting id: list/meetings returns meetingId as m.mongoTranscriptId || m.id
+    let postgresId = id;
+    const byId = await prisma.meeting.findUnique({ where: { id } });
+    if (!byId) {
+      const byMongo = await prisma.meeting.findFirst({ where: { mongoTranscriptId: id } });
+      if (byMongo) postgresId = byMongo.id;
+    }
+    const result = await deleteMeeting(postgresId);
+    if (result.success) {
+      res.status(200).json({ success: true, message: `Meeting ${id} deleted` });
+    } else {
+      const isNotFound = result.error?.toLowerCase().includes("not found");
+      res.status(isNotFound ? 404 : 500).json({ 
+        error: "Failed to delete meeting", 
+        details: result.error 
+      });
+    }
+  } catch (err) {
+    console.error(`Error deleting meeting ${id}:`, err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

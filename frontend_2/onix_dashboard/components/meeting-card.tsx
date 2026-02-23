@@ -1,6 +1,6 @@
 "use client"
 
-import { Clock, Users, MoreVertical, CheckCircle2, CalendarDays } from "lucide-react"
+import { Clock, Users, MoreVertical, CheckCircle2, CalendarDays, MessageCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
@@ -12,6 +12,7 @@ interface MeetingCardProps {
     status?: "Scheduled" | "Completed" | "Live"
     onClick?: () => void
     onActionClick?: () => void
+    onAskOnixClick?: () => void
 }
 
 export function MeetingCard({
@@ -21,7 +22,8 @@ export function MeetingCard({
     duration,
     status = "Scheduled",
     onClick,
-    onActionClick
+    onActionClick,
+    onAskOnixClick
 }: MeetingCardProps) {
     const isCompleted = status === "Completed"
     const isLive = status === "Live"
@@ -58,6 +60,20 @@ export function MeetingCard({
                             {isCompleted ? <CheckCircle2 className="size-3" /> : isLive ? <span className="size-2 rounded-full bg-blue-500 animate-pulse" /> : <CalendarDays className="size-3" />}
                             {status}
                         </div>
+                        {onAskOnixClick && (
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-10 rounded-2xl text-slate-400 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-500 dark:hover:text-white dark:hover:bg-slate-800 transition-all"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onAskOnixClick();
+                                }}
+                                title="Ask Onix"
+                            >
+                                <MessageCircle className="size-5" />
+                            </Button>
+                        )}
                         <Button
                             variant="ghost"
                             size="icon"
@@ -73,19 +89,19 @@ export function MeetingCard({
                 </div>
 
                 {/* Footer: Metrics */}
-                <div className="flex items-center gap-5 mt-2">
-                    <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
-                        <div className="size-8 rounded-xl bg-slate-100 dark:bg-slate-800/50 flex items-center justify-center text-slate-500 dark:text-slate-300">
-                            <Users className="size-4" />
+                <div className="flex items-center gap-3 mt-2">
+                    <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+                        <div className="size-7 rounded-lg bg-slate-100 dark:bg-slate-800/50 flex items-center justify-center text-slate-500 dark:text-slate-300 flex-shrink-0">
+                            <Users className="size-3.5" />
                         </div>
-                        <span className="text-sm font-medium">{attendees} attendees</span>
+                        <span className="text-xs font-medium whitespace-nowrap">{attendees} attendees</span>
                     </div>
 
-                    <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
-                        <div className="size-8 rounded-xl bg-slate-100 dark:bg-slate-800/50 flex items-center justify-center text-slate-500 dark:text-slate-300">
-                            <Clock className="size-4" />
+                    <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+                        <div className="size-7 rounded-lg bg-slate-100 dark:bg-slate-800/50 flex items-center justify-center text-slate-500 dark:text-slate-300 flex-shrink-0">
+                            <Clock className="size-3.5" />
                         </div>
-                        <span className="text-sm font-medium">{duration > 0 ? `${duration} min` : '—'}</span>
+                        <span className="text-xs font-medium whitespace-nowrap">{duration > 0 ? `${duration} min` : '—'}</span>
                     </div>
                 </div>
             </div>

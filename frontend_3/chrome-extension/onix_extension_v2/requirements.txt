@@ -1,0 +1,22 @@
+# Core dependencies
+torch>=2.0.0
+torchaudio>=2.0.0
+numpy>=1.21.0
+openai-whisper>=20231117
+
+# Speaker diarization
+pyannote.audio>=3.1.0
+pyannote.core>=5.0.0
+
+# Audio processing
+librosa>=0.10.0
+soundfile>=0.12.0
+
+# Web framework
+fastapi>=0.104.0
+uvicorn>=0.24.0
+websockets>=12.0
+
+# Utilities
+python-multipart>=0.0.6
+aiofiles>=23.0.0

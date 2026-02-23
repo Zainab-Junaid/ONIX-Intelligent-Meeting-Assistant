@@ -186,4 +186,28 @@ export async function fsSaveActionItemsOnce(
 	});
 }
 
+export async function fsDeleteMeeting(meetingId: string): Promise<boolean> {
+  const db = getFirestoreAdmin();
+  const ref = db.collection("meetings").doc(meetingId);
+  
+  try {
+    const doc = await ref.get();
+    if (!doc.exists) return false;
+
+    // Delete segments subcollection (naive implementation for small meetings)
+    const segments = await ref.collection("segments").limit(500).get();
+    if (!segments.empty) {
+      const batch = db.batch();
+      segments.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+    
+    await ref.delete();
+    return true;
+  } catch (err) {
+    console.error(`[FS] Error deleting meeting ${meetingId}:`, err);
+    return false;
+  }
+}
+
 

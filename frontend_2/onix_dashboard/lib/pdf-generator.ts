@@ -1,5 +1,20 @@
+import { marked } from 'marked';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+
+// Helper to strip markdown and non-ASCII symbols for clean PDF output (jsPDF default font is ASCII-only)
+function cleanMarkdownText(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/^#+\s*/gm, '') // strip leading ### from headings
+    .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
+    .replace(/__/g, '')
+    .replace(/_/g, '')
+    .replace(/`/g, '')
+    .replace(/\u2022/g, '-') // Unicode bullet -> ASCII hyphen
+    .trim();
+}
 
 export interface ActionItem {
   item: string;
@@ -56,11 +71,71 @@ export async function generateMeetingPDF(data: PDFData): Promise<string> {
   doc.text('Summary', 20, yPos);
   yPos += 8;
   
-  doc.setFontSize(11);
+  // Parse summary with marked lexer
+  const tokens = marked.lexer(summaryText);
+  
   doc.setTextColor(45, 55, 72);
-  const splitSummary = doc.splitTextToSize(summaryText, pageWidth - 40);
-  doc.text(splitSummary, 20, yPos);
-  yPos += (splitSummary.length * 6) + 15;
+  
+  tokens.forEach(token => {
+      // Check for page break
+      if (yPos > 270) {
+          doc.addPage();
+          yPos = 20;
+      }
+
+      const anyToken = token as any; // marked types are sometimes strict
+
+      if (token.type === 'heading') {
+          doc.setFontSize(14 - (token.depth)); // H1=13, H2=12, etc
+          doc.setFont(undefined, 'bold');
+          yPos += 5;
+          const headingText = cleanMarkdownText(anyToken.text ?? anyToken.raw ?? '');
+          if (headingText) {
+            doc.text(headingText, 20, yPos);
+            yPos += 8;
+          }
+          doc.setFont(undefined, 'normal');
+      } else if (token.type === 'paragraph') {
+          doc.setFontSize(11);
+          // Check for inline alignment manually if marked put it in paragraph (unlikely for div but possible for spans if we supported them)
+          // For now just standard left align for paragraphs
+          const cleanText = cleanMarkdownText(anyToken.text || '');
+          const splitText = doc.splitTextToSize(cleanText, pageWidth - 40);
+          doc.text(splitText, 20, yPos);
+          yPos += (splitText.length * 6) + 4;
+      } else if (token.type === 'list') {
+          doc.setFontSize(11);
+          token.items.forEach((item: any) => {
+              if (yPos > 270) {
+                  doc.addPage();
+                  yPos = 20;
+              }
+              const cleanText = cleanMarkdownText(item.text || '');
+              const splitText = doc.splitTextToSize('- ' + cleanText, pageWidth - 45);
+              doc.text(splitText, 25, yPos); // Indent list items (use ASCII hyphen, not Unicode bullet)
+              yPos += (splitText.length * 6) + 2;
+          });
+          yPos += 4;
+      } else if (token.type === 'html') {
+          // Handle HTML blocks (like <div align="center">...</div>)
+          doc.setFontSize(11);
+          const rawText = token.text || anyToken.raw || '';
+          
+          let align: 'left' | 'center' | 'right' = 'left';
+          if (rawText.match(/align=["']center["']/i)) align = 'center';
+          else if (rawText.match(/align=["']right["']/i)) align = 'right';
+
+          const cleanText = cleanMarkdownText(rawText);
+          if (cleanText) {
+             const splitText = doc.splitTextToSize(cleanText, pageWidth - 40);
+             const xPos = align === 'center' ? pageWidth / 2 : (align === 'right' ? pageWidth - 20 : 20);
+             doc.text(splitText, xPos, yPos, { align: align });
+             yPos += (splitText.length * 6) + 4;
+          }
+      }
+  });
+
+  yPos += 10;
 
   // Action Items Section
   if (actionItems && actionItems.length > 0) {

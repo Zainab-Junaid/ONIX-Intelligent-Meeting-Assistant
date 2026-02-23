@@ -138,7 +138,7 @@ export function Sidebar({
           <NavItem icon={LayoutDashboard} href="/" isCollapsed={isCollapsed}>Dashboard</NavItem>
           <NavItem icon={CalendarCheck2} href="/meetings" isCollapsed={isCollapsed}>Meetings</NavItem>
           <NavItem icon={CalendarClock} href="/schedule" isCollapsed={isCollapsed}>Schedule</NavItem>
-          <NavItem icon={Bot} href="/ai-tools" isCollapsed={isCollapsed}>Chat with me!</NavItem>
+          <NavItem icon={Bot} href="/ai-tools" isCollapsed={isCollapsed}>AI Chatbot</NavItem>
           <NavItem
             icon={Cog}
             href="/settings"

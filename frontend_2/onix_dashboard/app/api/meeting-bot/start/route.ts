@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     const userId = decodedToken.uid;
 
     // Get meeting URL and title from request body
-    const { meetingUrl, meetingTitle } = await request.json();
+    const { meetingUrl, meetingTitle, language } = await request.json();
     if (!meetingUrl) {
       return NextResponse.json({ error: 'Meeting URL required' }, { status: 400 });
     }
@@ -42,7 +42,8 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         url: meetingUrl,
         userId,
-        meetingTitle: meetingTitle || 'Untitled Meeting'
+        meetingTitle: meetingTitle || 'Untitled Meeting',
+        language: language || 'English'
       })
     });
 

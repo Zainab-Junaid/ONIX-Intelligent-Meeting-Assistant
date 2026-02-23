@@ -19,12 +19,12 @@ export async function GET(request: NextRequest) {
     }
 
     const token = authHeader.split('Bearer ')[1];
+
+    initFirebase();
     
     // Verify Firebase token
     const decodedToken = await getAuth().verifyIdToken(token);
     const userId = decodedToken.uid;
-
-    initFirebase();
 
     // First, get user's meetingIds from MeetingJob to ensure accurate filtering
     /* 
@@ -67,15 +67,13 @@ export async function GET(request: NextRequest) {
         signal: AbortSignal.timeout(5000) 
       });
     } catch (fetchError: any) {
-       console.error('Failed to connect to backend:', fetchError.message);
-       return NextResponse.json({ 
-         error: 'Backend unavailable', 
-         details: `Could not connect to bot backend at ${backendUrl}. Is it running?` 
-       }, { status: 503 });
+       console.warn('Meeting bot backend unreachable at', backendUrl, '- returning empty meetings list.', fetchError?.message);
+       return NextResponse.json([]);
     }
     
     if (!res.ok) {
-      return NextResponse.json({ error: 'Failed to fetch meetings from backend', details: await res.text() }, { status: res.status });
+      console.warn('Bot backend returned non-OK for /list/meetings:', res.status);
+      return NextResponse.json([]);
     }
 
     const allMeetings = await res.json();

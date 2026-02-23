@@ -9,6 +9,7 @@ import {
   fsFinalizeMeetingDuration,
   fsSaveSummaryOnce,
   fsSaveActionItemsOnce,
+  fsDeleteMeeting,
 } from "./firestoreAdmin";
 
 // Using singleton prisma client from lib/prisma.ts
@@ -539,4 +540,55 @@ function hashText(text: string): string {
     hash = hash & hash; // Convert to 32bit integer
   }
   return Math.abs(hash).toString(36);
+}
+
+// delete meeting and all related data
+export async function deleteMeeting(meetingId: string): Promise<{ success: boolean; error?: string }> {
+  console.log(`[DELETE] Request to delete meeting ${meetingId}`);
+
+  if (process.env.ENABLE_FIRESTORE === "1") {
+    const success = await fsDeleteMeeting(meetingId);
+    return { success, error: success ? undefined : "Meeting not found in Firestore" };
+  }
+
+  // Postgres + MongoDB deletion
+  try {
+    // 1. Delete from MongoDB transcript repo (source of truth for segments)
+    // We use dynamic import to avoid loading Mongo deps if not needed (matching getTranscript pattern)
+    try {
+      const { deleteTranscriptFromMongo } = await import("./infrastructure/mongo/transcriptRepo");
+      await deleteTranscriptFromMongo(meetingId);
+    } catch (mongoErr) {
+      console.warn(`[DELETE] ⚠️ Could not delete from MongoDB (might not be connected/used):`, mongoErr);
+    }
+
+    // 2. Delete from Postgres tables in transaction to ensure consistency
+    // Note: The order matters due to foreign key constraints if cascading is not set up in DB
+    await prisma.$transaction([
+      prisma.meetingParticipant.deleteMany({ where: { meetingId } }),
+      prisma.meetingSummary.deleteMany({ where: { meetingId } }),
+      prisma.actionItem.deleteMany({ where: { meetingId } }),
+      prisma.speakerStats.deleteMany({ where: { meetingId } }),
+      prisma.meetingAnalytics.deleteMany({ where: { meetingId } }),
+      prisma.meetingKeyword.deleteMany({ where: { meetingId } }),
+      prisma.followUp.deleteMany({ where: { meetingId } }),
+      prisma.calendarEvent.deleteMany({ where: { meetingId } }),
+      // Legacy tables
+      prisma.meetingJob.deleteMany({ where: { meetingId } }),
+      // Finally the meeting itself
+      prisma.meeting.delete({ where: { id: meetingId } }),
+    ]);
+
+    console.log(`[DELETE] ✅ Successfully deleted meeting ${meetingId} from Postgres`);
+    return { success: true };
+  } catch (error: any) {
+    console.error(`[DELETE] ❌ Failed to delete meeting ${meetingId}:`, error);
+    // If it's a "Record to delete does not exist" error, we can consider it success or just log it
+    // P2025 is "An operation failed because it depends on one or more records that were required but not found"
+    if (error.code === 'P2025') { 
+      console.log(`[DELETE] ℹ️ Meeting ${meetingId} not found in Postgres, considering deleted.`);
+      return { success: true };
+    }
+    return { success: false, error: error.message || String(error) };
+  }
 }

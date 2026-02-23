@@ -17,11 +17,11 @@ services:
     image: redis:7-alpine
     container_name: meetingbot-redis
     ports:
-      - "6379:6379"
+      - "7379:6379"
     networks: [meetingbot]
 
   mongo:
-    image: mongo:4.4
+    image: mongo:7
     container_name: meetingbot-mongo
     ports:
       - "27017:27017"
@@ -38,8 +38,8 @@ services:
     ports:
       - "3001:3001"
       # Expose Prisma Studio port so you can access it from the host when running inside the backend container.
-      # Container listens on 5555; host maps 5556 -> 5555 to avoid conflicts if 5555 is already in use on Windows.
-      - "5556:5555"
+      # Container listens on 5555; host maps 8555 -> 5555 to avoid conflicts if 5555/5556/5558 is already in use on Windows.
+      - "9555:5555"
     env_file:
       - .env
     environment:
@@ -52,6 +52,8 @@ services:
       - REDIS_URL=redis://redis:6379
       # Enable queue-based post-meeting processing
       - ENABLE_QUEUE_PROCESSING=1
+      # Frontend URL for internal API calls (e.g., sending summary emails)
+      - FRONTEND_URL=http://host.docker.internal:3000
       # Pass host path to auth.json so backend can mount it into bot containers
       # This should be the absolute path to auth.json on the host machine
       - AUTH_JSON_HOST_PATH=${AUTH_JSON_HOST_PATH:-}

@@ -1,0 +1,11 @@
+
+# Next.js build output
+.next/
+out/
+build/
+dist/
+
+# Node modules
+node_modules/
+.DS_Store
+*.log

@@ -14,8 +14,9 @@ if (!admin.apps.length) {
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { meetingId: string } }
+  props: { params: Promise<{ meetingId: string }> }
 ) {
+  const params = await props.params;
   try {
     // Get Firebase token from headers
     const authHeader = request.headers.get('authorization');

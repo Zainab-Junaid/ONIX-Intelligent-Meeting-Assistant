@@ -15,33 +15,40 @@ function initFirebase() {
  * POST /api/meeting-bot/send-summary
  */
 export async function POST(request: NextRequest) {
+  console.log('🚀 [API] POST /api/meeting-bot/send-summary - Started');
   try {
     // Get Firebase token from headers
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
+      console.error('❌ [API] No auth token provided');
       return NextResponse.json({ error: 'No token provided' }, { status: 401 });
     }
 
     const token = authHeader.split('Bearer ')[1];
     
     // Verify Firebase token
-    initFirebase();
-    const decodedToken = await getAuth().verifyIdToken(token);
-    const userId = decodedToken.uid;
+    try {
+        initFirebase();
+        const decodedToken = await getAuth().verifyIdToken(token);
+        console.log(`👤 [API] Authenticated user: ${decodedToken.uid}`);
+    } catch (authError) {
+        console.error('❌ [API] Auth validation failed:', authError);
+        return NextResponse.json({ error: 'Authentication failed' }, { status: 401 });
+    }
 
     // Get meeting ID and optional recipients and data from request body
-    // Accepting 'data' allows frontend to pass current view state if waiting for backend sync is too slow
-    const { meetingId, recipients, data } = await request.json();
+    const body = await request.json();
+    const { meetingId, recipients, data } = body;
+    
+    console.log(`📝 [API] Request Data: MeetingID=${meetingId}, Recipients=${recipients?.length}, DataProvided=${!!data}`);
+
     if (!meetingId) {
       return NextResponse.json({ error: 'Meeting ID required' }, { status: 400 });
     }
-
-    // Get Firestore instance
-    const db = admin.firestore();
     
-    // Use data passed from frontend if available (faster and more reliable for instant actions from UI)
+    // Use data passed from frontend if available
     if (data) {
-        console.log(`📧 Sending email using data provided from frontend for ${meetingId}`);
+        console.log(`📧 [API] Processing email with frontend data for ${meetingId}`);
         const { meetingTitle, summaryText, meetingDate, meetingUrl, actionItems } = data;
         
         let participantEmails: string[] = [];
@@ -56,17 +63,21 @@ export async function POST(request: NextRequest) {
         }
         
         if (participantEmails.length === 0) {
+             console.log('⚠️ [API] No participants found to send email to.');
              return NextResponse.json({ 
                 message: 'No participants to send email to',
                 skipped: true
               });
         }
 
+        console.log(`👥 [API] Target Recipients: ${participantEmails.join(', ')}`);
+
         // Generate Meeting Insights PDF
         let attachments = [];
         try {
+          console.log('📄 [API] Generating PDF...');
           const { generateMeetingPDF } = await import('@/lib/pdf-generator');
-          // Format action items for PDF if needed
+          
           const pdfActionItems = actionItems?.map((item: any) => ({
              item: typeof item === 'string' ? item : (item.item || item.text || item),
              assignedTo: typeof item === 'object' ? (item.assignedTo || item.assignee) : undefined,
@@ -87,22 +98,31 @@ export async function POST(request: NextRequest) {
               filename: `Meeting_Insights_${meetingId.substring(0,8)}.pdf`,
               type: 'application/pdf'
             });
-            console.log(`✅ Meeting Insights PDF generated for ${meetingId}`);
+            console.log(`✅ [API] PDF Generated successfully.`);
+          } else {
+            console.log(`⚠️ [API] PDF Generation returned null/empty.`);
           }
         } catch (pdfError) {
-          console.error('⚠️ Failed to generate PDF (sending email without attachment):', pdfError);
+          console.error('⚠️ [API] Failed to generate PDF (sending email without attachment):', pdfError);
         }
 
         // Send email
-        await sendMeetingSummaryEmail(
-            participantEmails,
-            meetingTitle,
-            summaryText,
-            meetingDate,
-            meetingUrl,
-            actionItems,
-            attachments
-        );
+        console.log('📨 [API] Sending email via service...');
+        try {
+            await sendMeetingSummaryEmail(
+                participantEmails,
+                meetingTitle,
+                summaryText,
+                meetingDate,
+                meetingUrl,
+                actionItems,
+                attachments
+            );
+            console.log('✅ [API] Email service returned success.');
+        } catch (emailServiceError) {
+            console.error('❌ [API] Email service threw error:', emailServiceError);
+            throw emailServiceError;
+        }
         
         return NextResponse.json({
             success: true,
@@ -111,18 +131,13 @@ export async function POST(request: NextRequest) {
         });
     }
 
-    // Fallback to legacy logic: Fetch from Database/Backend if no data provided
-    // Useful if we trigger this from a background job, but frontend usage should prefer passing data
-    // ... (omitting full complex DB lookup logic for brevity as frontend will pass data)
-    // But simplified version just to be safe:
-
     return NextResponse.json({ 
         error: 'Data payload required',
         message: 'Please provide meeting data (summary, title, etc) in the request body for this endpoint.'
     }, { status: 400 });
 
   } catch (error: any) {
-    console.error('Error sending summary emails:', error);
+    console.error('❌ [API] Critical Error in send-summary route:', error);
     return NextResponse.json({ 
       error: 'Failed to send summary emails', 
       details: error?.message 

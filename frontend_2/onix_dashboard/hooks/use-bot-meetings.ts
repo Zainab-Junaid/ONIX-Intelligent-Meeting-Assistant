@@ -63,17 +63,45 @@ export const useBotMeetings = () => {
         })
       ]);
 
+      const meetingsText = await meetingsResponse.text();
+      const summariesText = await summariesResponse.text();
+
       if (!meetingsResponse.ok || !summariesResponse.ok) {
-        const meetingsError = await meetingsResponse.text();
-        const summariesError = await summariesResponse.text();
-        console.error('API Errors:', { meetingsError, summariesError });
-        throw new Error('Failed to fetch bot meeting data');
+        if (process.env.NODE_ENV === 'development') {
+          console.error('API Errors:', {
+            meetings: { status: meetingsResponse.status, body: meetingsText.slice(0, 300) },
+            summaries: { status: summariesResponse.status, body: summariesText.slice(0, 300) }
+          });
+        }
+        setError('Failed to load meeting data. Check that the meeting bot backend is running.');
+        setMeetings([]);
+        setSummaries([]);
+        return;
       }
 
-      const meetingsData = await meetingsResponse.json();
-      const summariesData = await summariesResponse.json();
-      setMeetings(meetingsData);
-      setSummaries(summariesData);
+      let meetingsData: BotMeeting[] = [];
+      let summariesData: BotSummary[] = [];
+      try {
+        meetingsData = JSON.parse(meetingsText) as BotMeeting[];
+      } catch {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Meetings response was not valid JSON:', meetingsText.slice(0, 200));
+        }
+        setError('Invalid response from meetings API.');
+        return;
+      }
+      try {
+        summariesData = JSON.parse(summariesText) as BotSummary[];
+      } catch {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Summaries response was not valid JSON:', summariesText.slice(0, 200));
+        }
+        setError('Invalid response from summaries API.');
+        return;
+      }
+
+      setMeetings(Array.isArray(meetingsData) ? meetingsData : []);
+      setSummaries(Array.isArray(summariesData) ? summariesData : []);
     } catch (err: any) {
       setError(err.message);
       console.error('Error fetching bot meetings:', err);

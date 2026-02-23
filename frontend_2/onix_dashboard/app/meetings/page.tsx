@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { AppShell } from "@/components/app-shell"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,6 +14,7 @@ import { useExtensionMeetings } from "@/hooks/use-extension-meetings"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { MeetingCard } from "@/components/meeting-card"
+import { AskOnixPopup } from "@/components/ask-onix-popup"
 
 type DateFilter = 'all' | '7days' | '30days' | '90days'
 type SortOption = 'newest' | 'oldest' | 'title-asc' | 'title-desc'
@@ -21,9 +23,18 @@ const INITIAL_DISPLAY_COUNT = 3
 
 export default function Page() {
   const { authUser, isLoading } = useAuth()
+  const searchParams = useSearchParams()
+  const router = useRouter()
   const [showBotPopup, setShowBotPopup] = useState(false)
   const [activeTab, setActiveTab] = useState('bot')
-  const [searchQuery, setSearchQuery] = useState('')
+  const searchQuery = searchParams.get('q') ?? ''
+  const setSearchQuery = useCallback((value: string) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (value.trim()) params.set('q', value)
+    else params.delete('q')
+    const query = params.toString()
+    router.replace(`/meetings${query ? `?${query}` : ''}`)
+  }, [searchParams, router])
   const [dateFilter, setDateFilter] = useState<DateFilter>('all')
   const [sortOption, setSortOption] = useState<SortOption>('newest')
 
@@ -38,6 +49,7 @@ export default function Page() {
   const { meetings: extensionMeetings, loading: extensionLoading, refetch: refetchExtensionMeetings } = useExtensionMeetings()
 
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
+  const [askOnixMeeting, setAskOnixMeeting] = useState<{ meetingId: string; title: string } | null>(null)
 
   // Filter helper function
   const filterByDate = (date: Date, filter: DateFilter): boolean => {
@@ -427,6 +439,7 @@ export default function Page() {
                     status={displayStatus}
                     onClick={() => window.location.href = `/transcripts?botId=${meeting.meetingId}`}
                     onActionClick={() => handleDeleteMeeting(meeting.meetingId, 'bot')}
+                    onAskOnixClick={() => setAskOnixMeeting({ meetingId: meeting.meetingId, title: meeting.title || `Meeting ${meeting.meetingId.substring(0, 8)}` })}
                   />
                 );
               })}
@@ -504,6 +517,7 @@ export default function Page() {
                     status="Completed"
                     onClick={() => window.location.href = `/transcripts?extensionId=${m.id}`}
                     onActionClick={() => handleDeleteMeeting(m.id, 'extension')}
+                    onAskOnixClick={() => setAskOnixMeeting({ meetingId: m.id, title: m.title || 'Untitled meeting' })}
                   />
                 );
               })}
@@ -539,6 +553,14 @@ export default function Page() {
         isOpen={showBotPopup}
         onClose={() => setShowBotPopup(false)}
         onSuccess={handleBotSuccess}
+      />
+
+      {/* Ask Onix – Live Q&A per meeting */}
+      <AskOnixPopup
+        isOpen={askOnixMeeting !== null}
+        onClose={() => setAskOnixMeeting(null)}
+        meetingId={askOnixMeeting?.meetingId ?? ''}
+        meetingTitle={askOnixMeeting?.title ?? ''}
       />
     </AppShell>
   )
