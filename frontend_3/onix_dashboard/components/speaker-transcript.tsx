@@ -18,14 +18,14 @@ interface SpeakerTranscriptProps {
 
 // Color palette for speakers - assign colors based on speaker name hash
 const SPEAKER_COLORS = [
-  { bg: 'bg-blue-50', border: 'border-blue-300', text: 'text-blue-700', badge: 'bg-blue-500' },
-  { bg: 'bg-orange-50', border: 'border-orange-300', text: 'text-orange-700', badge: 'bg-orange-500' },
-  { bg: 'bg-green-50', border: 'border-green-300', text: 'text-green-700', badge: 'bg-green-500' },
-  { bg: 'bg-purple-50', border: 'border-purple-300', text: 'text-purple-700', badge: 'bg-purple-500' },
-  { bg: 'bg-pink-50', border: 'border-pink-300', text: 'text-pink-700', badge: 'bg-pink-500' },
-  { bg: 'bg-indigo-50', border: 'border-indigo-300', text: 'text-indigo-700', badge: 'bg-indigo-500' },
-  { bg: 'bg-teal-50', border: 'border-teal-300', text: 'text-teal-700', badge: 'bg-teal-500' },
-  { bg: 'bg-amber-50', border: 'border-amber-300', text: 'text-amber-700', badge: 'bg-amber-500' },
+  { bg: 'bg-blue-50 dark:bg-blue-900/20', border: 'border-blue-300 dark:border-blue-800/50', text: 'text-blue-700 dark:text-blue-400', badge: 'bg-blue-500' },
+  { bg: 'bg-orange-50 dark:bg-orange-900/20', border: 'border-orange-300 dark:border-orange-800/50', text: 'text-orange-700 dark:text-orange-400', badge: 'bg-orange-500' },
+  { bg: 'bg-green-50 dark:bg-green-900/20', border: 'border-green-300 dark:border-green-800/50', text: 'text-green-700 dark:text-green-400', badge: 'bg-green-500' },
+  { bg: 'bg-purple-50 dark:bg-purple-900/20', border: 'border-purple-300 dark:border-purple-800/50', text: 'text-purple-700 dark:text-purple-400', badge: 'bg-purple-500' },
+  { bg: 'bg-pink-50 dark:bg-pink-900/20', border: 'border-pink-300 dark:border-pink-800/50', text: 'text-pink-700 dark:text-pink-400', badge: 'bg-pink-500' },
+  { bg: 'bg-indigo-50 dark:bg-indigo-900/20', border: 'border-indigo-300 dark:border-indigo-800/50', text: 'text-indigo-700 dark:text-indigo-400', badge: 'bg-indigo-500' },
+  { bg: 'bg-teal-50 dark:bg-teal-900/20', border: 'border-teal-300 dark:border-teal-800/50', text: 'text-teal-700 dark:text-teal-400', badge: 'bg-teal-500' },
+  { bg: 'bg-amber-50 dark:bg-amber-900/20', border: 'border-amber-300 dark:border-amber-800/50', text: 'text-amber-700 dark:text-amber-400', badge: 'bg-amber-500' },
 ];
 
 // Get color for a speaker based on their name
@@ -135,7 +135,7 @@ export function SpeakerTranscript({ segments, meetingEnded, isLive }: SpeakerTra
               {/* Message content */}
               <div className={`rounded-lg px-4 py-2.5 ${colors.bg} ${colors.border} border max-w-[85%]`}>
                 <p
-                  className={`leading-relaxed text-gray-800 ${urdu ? 'font-urdu text-sm' : 'text-[0.9375rem]'}`}
+                  className={`leading-relaxed text-gray-800 dark:text-gray-200 ${urdu ? 'font-urdu text-sm' : 'text-[0.9375rem]'}`}
                   dir={urdu ? 'rtl' : undefined}
                 >
                   {segment.text}
@@ -159,11 +159,11 @@ export function SpeakerTranscript({ segments, meetingEnded, isLive }: SpeakerTra
       {/* Meeting Ended indicator */}
       {meetingEnded && (
         <div className="mt-6 flex items-center gap-3">
-          <div className="flex-1 h-px bg-gray-300" />
-          <span className="text-xs font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+          <div className="flex-1 h-px bg-gray-300 dark:bg-slate-700" />
+          <span className="text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-slate-800 px-3 py-1 rounded-full">
             Meeting has ended
           </span>
-          <div className="flex-1 h-px bg-gray-300" />
+          <div className="flex-1 h-px bg-gray-300 dark:bg-slate-700" />
         </div>
       )}
     </div>
