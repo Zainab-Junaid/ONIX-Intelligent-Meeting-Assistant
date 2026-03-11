@@ -310,39 +310,39 @@ function parseSummarySections(summaryText: string, filter: string = 'all') {
   const getSectionColor = (title: string) => {
     const lowerTitle = title.toLowerCase()
     if (lowerTitle.includes('executive') || lowerTitle.includes('overview')) return {
-      card: 'bg-blue-50 dark:bg-blue-900/10 border-blue-400 dark:border-blue-800 text-blue-900 dark:text-blue-100',
-      header: 'text-blue-600 dark:text-blue-400',
-      dot: 'bg-blue-500 dark:bg-blue-400'
+      card: 'bg-blue-50 border-blue-400 text-blue-900',
+      header: 'text-blue-600',
+      dot: 'bg-blue-500'
     }
     if (lowerTitle.includes('discussion') || lowerTitle.includes('key')) return {
-      card: 'bg-purple-50 dark:bg-purple-900/10 border-purple-400 dark:border-purple-800 text-purple-900 dark:text-purple-100',
-      header: 'text-purple-600 dark:text-purple-400',
-      dot: 'bg-purple-500 dark:bg-purple-400'
+      card: 'bg-purple-50 border-purple-400 text-purple-900',
+      header: 'text-purple-600',
+      dot: 'bg-purple-500'
     }
     if (lowerTitle.includes('decision')) return {
-      card: 'bg-green-50 dark:bg-green-900/10 border-green-400 dark:border-green-800 text-green-900 dark:text-green-100',
-      header: 'text-green-600 dark:text-green-400',
-      dot: 'bg-green-500 dark:bg-green-400'
+      card: 'bg-green-50 border-green-400 text-green-900',
+      header: 'text-green-600',
+      dot: 'bg-green-500'
     }
     if (lowerTitle.includes('action') || lowerTitle.includes('todo')) return {
-      card: 'bg-blue-50 dark:bg-blue-900/10 border-blue-400 dark:border-blue-800 text-blue-900 dark:text-blue-100',
-      header: 'text-blue-600 dark:text-blue-400',
-      dot: 'bg-blue-500 dark:bg-blue-400'
+      card: 'bg-blue-50 border-blue-400 text-blue-900',
+      header: 'text-blue-600',
+      dot: 'bg-blue-500'
     }
     if (lowerTitle.includes('next step') || lowerTitle.includes('follow')) return {
-      card: 'bg-indigo-50 dark:bg-indigo-900/10 border-indigo-400 dark:border-indigo-800 text-indigo-900 dark:text-indigo-100',
-      header: 'text-indigo-600 dark:text-indigo-400',
-      dot: 'bg-indigo-500 dark:bg-indigo-400'
+      card: 'bg-indigo-50 border-indigo-400 text-indigo-900',
+      header: 'text-indigo-600',
+      dot: 'bg-indigo-500'
     }
     if (lowerTitle.includes('important') || lowerTitle.includes('info')) return {
-      card: 'bg-yellow-50 dark:bg-yellow-900/10 border-yellow-400 dark:border-yellow-800 text-yellow-900 dark:text-yellow-100',
-      header: 'text-amber-600 dark:text-amber-400',
-      dot: 'bg-amber-500 dark:bg-amber-400'
+      card: 'bg-yellow-50 border-yellow-400 text-yellow-900',
+      header: 'text-amber-600',
+      dot: 'bg-amber-500'
     }
     return {
-      card: 'bg-gray-50 dark:bg-gray-900/10 border-gray-400 dark:border-gray-800 text-gray-900 dark:text-gray-100',
-      header: 'text-gray-600 dark:text-gray-400',
-      dot: 'bg-gray-500 dark:bg-gray-400'
+      card: 'bg-gray-50 border-gray-400 text-gray-900',
+      header: 'text-gray-600',
+      dot: 'bg-gray-500'
     }
   }
 
@@ -597,7 +597,7 @@ export default function Page() {
   const [actionItems, setActionItems] = useState<Array<{ id: string; text: string; assignedTo?: string; dueDate?: any }>>([])
   const [botActionItems, setBotActionItems] = useState<any[]>([])
   const [botAnalytics, setBotAnalytics] = useState<any>(null)
-  
+
   const [activeTab, setActiveTab] = useState<'transcript' | 'summary' | 'notes' | 'recording' | 'actions' | 'stats'>('transcript')
 
 
@@ -726,14 +726,14 @@ export default function Page() {
       console.log('✅ Connected to Socket.IO for bot meeting (via proxy)');
       socket.emit('join_meeting', botId);
     });
-    
+
     socket.on('connect_error', (err) => {
-        console.error('❌ Socket connection error:', err);
+      console.error('❌ Socket connection error:', err);
     });
 
     socket.on('reconnect', (attempt) => {
-        console.log('🔄 Socket reconnected after', attempt, 'attempts');
-        socket.emit('join_meeting', botId);
+      console.log('🔄 Socket reconnected after', attempt, 'attempts');
+      socket.emit('join_meeting', botId);
     });
 
     socket.on('transcript_update', (data: { meetingId: string; segments: any[]; timestamp: string }) => {
@@ -748,26 +748,26 @@ export default function Page() {
               const key = seg.start !== undefined ? `${seg.start}-${seg.speaker}` : seg.text;
               segmentMap.set(key, seg);
             });
-            
+
             // Merge new segments
             data.segments.forEach(seg => {
-               const key = seg.start !== undefined ? `${seg.start}-${seg.speaker}` : seg.text;
-               segmentMap.set(key, seg);
+              const key = seg.start !== undefined ? `${seg.start}-${seg.speaker}` : seg.text;
+              segmentMap.set(key, seg);
             });
-            
+
             return Array.from(segmentMap.values()).sort((a, b) => (a.start || 0) - (b.start || 0));
           });
-          
+
           // Also update main segments state
-           setSegments(prev => {
+          setSegments(prev => {
             const segmentMap = new Map<string, any>();
             prev.forEach(seg => {
               const key = seg.start !== undefined ? `${seg.start}-${seg.speaker}` : seg.text;
               segmentMap.set(key, seg);
             });
             data.segments.forEach(seg => {
-               const key = seg.start !== undefined ? `${seg.start}-${seg.speaker}` : seg.text;
-               segmentMap.set(key, seg);
+              const key = seg.start !== undefined ? `${seg.start}-${seg.speaker}` : seg.text;
+              segmentMap.set(key, seg);
             });
             return Array.from(segmentMap.values()).sort((a, b) => (a.start || 0) - (b.start || 0));
           });
@@ -776,24 +776,24 @@ export default function Page() {
     });
 
     socket.on('summary_update', (data: { meetingId: string; summary: string }) => {
-        if (data.meetingId === botId && isMounted) {
-            console.log('📝 Real-time summary update');
-            setSummaryText(data.summary);
-        }
+      if (data.meetingId === botId && isMounted) {
+        console.log('📝 Real-time summary update');
+        setSummaryText(data.summary);
+      }
     });
 
     socket.on('action_items_update', (data: { meetingId: string; items: any[] }) => {
-        if (data.meetingId === botId && isMounted) {
-            console.log('📝 Real-time action items update');
-            setBotActionItems(data.items);
-        }
+      if (data.meetingId === botId && isMounted) {
+        console.log('📝 Real-time action items update');
+        setBotActionItems(data.items);
+      }
     });
-    
+
     socket.on('analytics_update', (data: { meetingId: string; analytics: any }) => {
-        if (data.meetingId === botId && isMounted) {
-             console.log('📊 Real-time analytics update');
-             setBotAnalytics(data.analytics);
-        }
+      if (data.meetingId === botId && isMounted) {
+        console.log('📊 Real-time analytics update');
+        setBotAnalytics(data.analytics);
+      }
     });
 
     return () => {
@@ -813,35 +813,35 @@ export default function Page() {
   // Handle saving summary
   const handleSaveSummary = async () => {
     if (!summaryTextareaRef.current || !botId) return
-    
+
     setIsSummarySaving(true)
     try {
-        const newSummary = summaryTextareaRef.current.value
-        const token = await authUser?.getIdToken()
-        const headers: any = { 
-            'Content-Type': 'application/json' 
-        }
-        if (token) headers['Authorization'] = `Bearer ${token}`
+      const newSummary = summaryTextareaRef.current.value
+      const token = await authUser?.getIdToken()
+      const headers: any = {
+        'Content-Type': 'application/json'
+      }
+      if (token) headers['Authorization'] = `Bearer ${token}`
 
-        const response = await fetch(`/api/meeting-bot/summary/${botId}`, {
-            method: 'POST',
-            body: JSON.stringify({ summary: newSummary }),
-            headers
-        })
+      const response = await fetch(`/api/meeting-bot/summary/${botId}`, {
+        method: 'POST',
+        body: JSON.stringify({ summary: newSummary }),
+        headers
+      })
 
-        if (response.ok) {
-            setSummaryText(newSummary)
-            setIsEditingSummary(false)
-            toast({ title: 'Success', description: 'Summary updated successfully' })
-        } else {
-             const err = await response.json()
-             toast({ title: 'Error', description: err.error || 'Failed to save summary', variant: 'destructive' })
-        }
+      if (response.ok) {
+        setSummaryText(newSummary)
+        setIsEditingSummary(false)
+        toast({ title: 'Success', description: 'Summary updated successfully' })
+      } else {
+        const err = await response.json()
+        toast({ title: 'Error', description: err.error || 'Failed to save summary', variant: 'destructive' })
+      }
     } catch (error) {
-        console.error(error)
-        toast({ title: 'Error', description: 'Failed to save summary', variant: 'destructive' })
+      console.error(error)
+      toast({ title: 'Error', description: 'Failed to save summary', variant: 'destructive' })
     } finally {
-        setIsSummarySaving(false)
+      setIsSummarySaving(false)
     }
   }
 
@@ -1252,7 +1252,7 @@ export default function Page() {
             </TabsList>
 
             <TabsContent value="transcript" className="mt-6">
-              <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm space-y-4">
+              <div className="rounded-lg border p-6 bg-white shadow-sm space-y-4">
                 <div>
                   <h3 className="font-medium mb-2">Original Transcript</h3>
                   <div className="whitespace-pre-wrap text-sm border-l-4 border-gray-200 pl-4">
@@ -1276,7 +1276,7 @@ export default function Page() {
             <TabsContent value="summary" className="mt-6">
               <div className="space-y-6">
                 {/* Summary */}
-                <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
+                <div className="rounded-lg border p-6 bg-white shadow-sm">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-medium">Summary</h3>
                     {(!extensionMeeting.summary?.text || extensionMeeting.summary.text.includes('No summary available')) && (
@@ -1378,7 +1378,7 @@ export default function Page() {
 
                 {/* Action Items - Only show when filter is 'actions' or 'all' */}
                 {(summarySection === 'actions' || summarySection === 'all') && (
-                  <div className="rounded-2xl border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
+                  <div className="rounded-2xl border p-6 bg-white shadow-sm">
                     <div className="mb-6">
                       <h3 className="text-xs font-black uppercase tracking-widest text-blue-600">Action Items</h3>
                     </div>
@@ -1391,13 +1391,13 @@ export default function Page() {
                           const cleanItem = cleanMarkdownText(itemText);
 
                           return (
-                            <div key={index} className="flex items-start gap-4 p-4 bg-slate-50/50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700 hover:border-blue-200 dark:hover:border-blue-800 transition-colors group">
-                              <div className="w-8 h-8 bg-blue-600 dark:bg-blue-500 text-white rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                            <div key={index} className="flex items-start gap-4 p-4 bg-slate-50/50 rounded-xl border border-slate-100 hover:border-blue-200 transition-colors group">
+                              <div className="w-8 h-8 bg-blue-600 text-white rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0 shadow-sm group-hover:scale-105 transition-transform">
                                 {index + 1}
                               </div>
                               <div className="flex-1">
-                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 leading-relaxed">
-                                  {renderTextWithMarkdown(cleanItem, 'text-blue-600 dark:text-blue-400', 'bg-blue-500 dark:bg-blue-400')}
+                                <div className="text-sm font-semibold text-slate-800 leading-relaxed">
+                                  {renderTextWithMarkdown(cleanItem, 'text-blue-600', 'bg-blue-500')}
                                 </div>
                                 <div className="flex flex-wrap gap-2 mt-3">
                                   {item.assignedTo && (
@@ -1438,7 +1438,7 @@ export default function Page() {
             <TabsContent value="recording" className="mt-6">
               <div className="space-y-6">
                 {/* Recording video on top */}
-                <div className="rounded-lg border dark:border-slate-800 p-4 bg-white dark:bg-slate-900 shadow-sm">
+                <div className="rounded-lg border p-4 bg-white shadow-sm">
                   <h3 className="font-medium mb-3 flex items-center gap-2">
                     <Video className="size-4" /> Meeting Recording
                   </h3>
@@ -1466,27 +1466,27 @@ export default function Page() {
                 {/* Transcript, Summary, Notes in one row when we have recording */}
                 {displayRecordingUrl && (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="rounded-lg border dark:border-slate-800 p-4 bg-white dark:bg-slate-900 shadow-sm">
-                      <h4 className="font-medium mb-2 text-sm text-blue-600 dark:text-blue-400">Transcript</h4>
+                    <div className="rounded-lg border p-4 bg-white shadow-sm">
+                      <h4 className="font-medium mb-2 text-sm text-blue-600">Transcript</h4>
                       <div className="text-xs whitespace-pre-wrap max-h-48 overflow-y-auto border-l-2 border-gray-200 pl-3">
                         {extensionMeeting.transcript ? extensionMeeting.transcript.slice(0, 800) + (extensionMeeting.transcript.length > 800 ? '…' : '') : 'No transcript.'}
                       </div>
                     </div>
-                    <div className="rounded-lg border dark:border-slate-800 p-4 bg-white dark:bg-slate-900 shadow-sm">
-                      <h4 className="font-medium mb-2 text-sm text-purple-600 dark:text-purple-400">Summary</h4>
+                    <div className="rounded-lg border p-4 bg-white shadow-sm">
+                      <h4 className="font-medium mb-2 text-sm text-purple-600">Summary</h4>
                       <div className="text-xs max-h-48 overflow-y-auto line-clamp-6">
                         {extensionMeeting.summary?.text ? extensionMeeting.summary.text.slice(0, 500) + (extensionMeeting.summary.text.length > 500 ? '…' : '') : 'No summary yet.'}
                       </div>
                     </div>
-                    <div className="rounded-lg border dark:border-slate-800 p-4 bg-white dark:bg-slate-900 shadow-sm">
-                      <h4 className="font-medium mb-2 text-sm text-amber-600 dark:text-amber-400">Notes</h4>
+                    <div className="rounded-lg border p-4 bg-white shadow-sm">
+                      <h4 className="font-medium mb-2 text-sm text-amber-600">Notes</h4>
                       <div className="text-xs max-h-48 overflow-y-auto space-y-2">
                         {extensionMeeting.notes && extensionMeeting.notes.length > 0
                           ? extensionMeeting.notes.slice(0, 5).map((n: any, i: number) => (
-                              <div key={n.id || i} className="border-l-2 border-amber-200 pl-2">
-                                {n.text ? n.text.slice(0, 120) + (n.text.length > 120 ? '…' : '') : '—'}
-                              </div>
-                            ))
+                            <div key={n.id || i} className="border-l-2 border-amber-200 pl-2">
+                              {n.text ? n.text.slice(0, 120) + (n.text.length > 120 ? '…' : '') : '—'}
+                            </div>
+                          ))
                           : 'No notes yet.'}
                       </div>
                     </div>
@@ -1649,7 +1649,7 @@ export default function Page() {
       })()}`}>
 
         {/* Back button or breadcrumb could go here */}
-        
+
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="w-full space-y-4">
           <TabsList className="w-full flex flex-wrap h-auto bg-slate-100/80 dark:bg-slate-800/80 p-1 gap-2 border-b border-white/20 dark:border-slate-700/50">
             <TabsTrigger value="transcript" className="flex-1 min-w-[100px] gap-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 dark:data-[state=active]:text-white data-[state=active]:shadow-sm">
@@ -1673,413 +1673,413 @@ export default function Page() {
           <div className="flex gap-6 items-start relative group/layout">
             <div className="flex-1 space-y-4 min-w-0 pr-2">
 
-            <TabsContent value="transcript" className="mt-0">
-              <div className="rounded-lg border dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm h-[calc(100vh-14rem)] flex flex-col overflow-hidden sticky top-24 self-start">
-                <div className="p-4 border-b dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900 z-10">
-                  <h3 className="font-medium flex items-center">
-                    Speaker Transcript
-                    {(() => {
-                      const status = (botMeeting as any)?.status?.toLowerCase?.();
-                      const isLiveMeeting = status === 'live' || status === 'bot_launched';
-                      if (isLiveMeeting) {
-                        return <span className="text-xs font-normal text-green-600 ml-2 animate-pulse flex items-center gap-1"><span className="size-2 rounded-full bg-green-500"/> Live Updates</span>;
-                      }
-                      if (segments.length > 0 || liveSegments.length > 0) {
-                        return <span className="text-xs font-normal text-slate-500 ml-2 bg-slate-100 px-2 py-0.5 rounded-full">Ended</span>;
-                      }
-                      return null;
-                    })()}
-                  </h3>
-                </div>
-                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar scroll-smooth">
-                  <SpeakerTranscript
-                    segments={liveSegments.length > 0 ? liveSegments : segments}
-                    isLive={((botMeeting as any)?.status?.toLowerCase?.() === 'live' || (botMeeting as any)?.status?.toLowerCase?.() === 'bot_launched')}
-                    meetingEnded={((botMeeting as any)?.status?.toLowerCase?.() !== 'live' && (botMeeting as any)?.status?.toLowerCase?.() !== 'bot_launched') && (segments.length > 0 || liveSegments.length > 0)}
-                  />
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="summary" className="mt-0">
-              <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="font-medium flex items-center gap-2"><Bot className="size-4 text-purple-500"/> AI Summary</h3>
-                  <div className="flex items-center gap-2">
-                    {isEditingSummary ? (
-                        <>
-                            <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                onClick={() => setIsEditingSummary(false)}
-                            >
-                                Cancel
-                            </Button>
-                            <Button 
-                                size="sm" 
-                                onClick={handleSaveSummary}
-                                disabled={isSummarySaving}
-                            >
-                                {isSummarySaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                Save Changes
-                            </Button>
-                        </>
-                    ) : (
-                        <>
-                             <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setIsEditingSummary(true)}
-                                disabled={!summaryText}
-                                className="hidden md:flex"
-                            >
-                                <Edit2 className="size-3 mr-2" />
-                                Edit
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-2"
-                                disabled={isSendingEmail || !summaryText}
-                                onClick={handleOpenEmailDialog}
-                            >
-                                {isSendingEmail ? <Loader2 className="size-3 animate-spin" /> : <Mail className="size-3" />}
-                                Send Email
-                            </Button>
-                        </>
-                    )}
+              <TabsContent value="transcript" className="mt-0">
+                <div className="rounded-lg border dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm h-[calc(100vh-14rem)] flex flex-col overflow-hidden sticky top-24 self-start">
+                  <div className="p-4 border-b dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900 z-10">
+                    <h3 className="font-medium flex items-center">
+                      Speaker Transcript
+                      {(() => {
+                        const status = (botMeeting as any)?.status?.toLowerCase?.();
+                        const isLiveMeeting = status === 'live' || status === 'bot_launched';
+                        if (isLiveMeeting) {
+                          return <span className="text-xs font-normal text-green-600 ml-2 animate-pulse flex items-center gap-1"><span className="size-2 rounded-full bg-green-500" /> Live Updates</span>;
+                        }
+                        if (segments.length > 0 || liveSegments.length > 0) {
+                          return <span className="text-xs font-normal text-slate-500 ml-2 bg-slate-100 px-2 py-0.5 rounded-full">Ended</span>;
+                        }
+                        return null;
+                      })()}
+                    </h3>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar scroll-smooth">
+                    <SpeakerTranscript
+                      segments={liveSegments.length > 0 ? liveSegments : segments}
+                      isLive={((botMeeting as any)?.status?.toLowerCase?.() === 'live' || (botMeeting as any)?.status?.toLowerCase?.() === 'bot_launched')}
+                      meetingEnded={((botMeeting as any)?.status?.toLowerCase?.() !== 'live' && (botMeeting as any)?.status?.toLowerCase?.() !== 'bot_launched') && (segments.length > 0 || liveSegments.length > 0)}
+                    />
                   </div>
                 </div>
+              </TabsContent>
 
-                {isEditingSummary ? (
-                    <div className="space-y-0">
-                         <textarea
-                            ref={summaryTextareaRef}
-                            defaultValue={summaryText}
-                            className="w-full min-h-[500px] p-4 text-sm leading-relaxed border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-y font-sans"
-                         />
-                         <p className="text-xs text-muted-foreground mt-2 text-right">Markdown supported</p>
+              <TabsContent value="summary" className="mt-0">
+                <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="font-medium flex items-center gap-2"><Bot className="size-4 text-purple-500" /> AI Summary</h3>
+                    <div className="flex items-center gap-2">
+                      {isEditingSummary ? (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setIsEditingSummary(false)}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={handleSaveSummary}
+                            disabled={isSummarySaving}
+                          >
+                            {isSummarySaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Save Changes
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsEditingSummary(true)}
+                            disabled={!summaryText}
+                            className="hidden md:flex"
+                          >
+                            <Edit2 className="size-3 mr-2" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2"
+                            disabled={isSendingEmail || !summaryText}
+                            onClick={handleOpenEmailDialog}
+                          >
+                            {isSendingEmail ? <Loader2 className="size-3 animate-spin" /> : <Mail className="size-3" />}
+                            Send Email
+                          </Button>
+                        </>
+                      )}
                     </div>
-                ) : (
+                  </div>
+
+                  {isEditingSummary ? (
+                    <div className="space-y-0">
+                      <textarea
+                        ref={summaryTextareaRef}
+                        defaultValue={summaryText}
+                        className="w-full min-h-[500px] p-4 text-sm leading-relaxed border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-y font-sans"
+                      />
+                      <p className="text-xs text-muted-foreground mt-2 text-right">Markdown supported</p>
+                    </div>
+                  ) : (
                     summaryText ? (
-                    <>
-                      {/* Dynamic filter buttons based on actual headings */}
-                      {(() => {
-                        const sections = extractSummarySections(summaryText);
-                        return (
-                          <>
-                            {sections.length > 1 && (
-                              <div className="flex flex-wrap gap-2 mb-6 pb-4 border-b">
-                                <button
-                                  onClick={() => setSummarySection('all')}
-                                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${summarySection === 'all'
-                                    ? 'bg-blue-600 text-white shadow-md'
-                                    : 'bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700'
-                                    }`}
-                                >
-                                  All Sections
-                                </button>
-                                {sections.map((sec, idx) => (
+                      <>
+                        {/* Dynamic filter buttons based on actual headings */}
+                        {(() => {
+                          const sections = extractSummarySections(summaryText);
+                          return (
+                            <>
+                              {sections.length > 1 && (
+                                <div className="flex flex-wrap gap-2 mb-6 pb-4 border-b">
                                   <button
-                                    key={idx}
-                                    onClick={() => setSummarySection(sec.title)}
-                                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${summarySection === sec.title
+                                    onClick={() => setSummarySection('all')}
+                                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${summarySection === 'all'
                                       ? 'bg-blue-600 text-white shadow-md'
                                       : 'bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700'
                                       }`}
                                   >
-                                    {sec.title}
+                                    All Sections
                                   </button>
-                                ))}
-                              </div>
-                            )}
-                            <div className="space-y-8">
-                              {sections
-                                .filter(sec => summarySection === 'all' || sec.title === summarySection)
-                                .map((sec, idx) => (
-                                  <div key={idx} className="bg-slate-50/50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
-                                    <h4 className="text-base font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
+                                  {sections.map((sec, idx) => (
+                                    <button
+                                      key={idx}
+                                      onClick={() => setSummarySection(sec.title)}
+                                      className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${summarySection === sec.title
+                                        ? 'bg-blue-600 text-white shadow-md'
+                                        : 'bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700'
+                                        }`}
+                                    >
+                                      {sec.title}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="space-y-8">
+                                {sections
+                                  .filter(sec => summarySection === 'all' || sec.title === summarySection)
+                                  .map((sec, idx) => (
+                                    <div key={idx} className="bg-slate-50/50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
+                                      <h4 className="text-base font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
                                         <div className="size-1.5 rounded-full bg-blue-500" />
                                         {sec.title}
-                                    </h4>
-                                    {renderSummaryContent(sec.content)}
-                                  </div>
-                                ))}
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </>
-                ) : (
-                  <div className="text-center py-16 bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-dashed dark:border-slate-700 text-muted-foreground">
-                    <Loader2 className="size-8 animate-spin mx-auto mb-3 opacity-20" />
-                    <p>No summary available yet.</p>
-                  </div>
-                ))}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="actions" className="mt-0">
-              <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
-                <h3 className="font-medium mb-6 flex items-center gap-2"><CheckSquare className="size-4 text-green-500"/> Action Items</h3>
-                {botActionItems && botActionItems.length > 0 ? (
-                  <div className="grid gap-3">
-                    {botActionItems.map((item: any, index: number) => {
-                      const text = typeof item === 'string' ? item : item.item || item.text || 'No description';
-                      const priority = item.priority || 'medium';
-                      const assignedTo = item.assignedTo;
-                      return (
-                        <div key={item.id || index} className="flex items-start gap-4 p-4 rounded-xl border border-slate-100 dark:border-slate-700 hover:border-blue-200 dark:hover:border-blue-800 hover:shadow-sm transition-all bg-white dark:bg-slate-900 group">
-                          <div className={`mt-1.5 size-2.5 rounded-full flex-shrink-0 ${priority === 'high' ? 'bg-red-500 shadow-red-200 dark:shadow-red-900 shadow-lg' :
-                            priority === 'low' ? 'bg-slate-400' :
-                              'bg-amber-500 shadow-amber-200 dark:shadow-amber-900 shadow-lg'
-                            }`} />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">{text}</div>
-                            <div className="text-xs text-muted-foreground mt-2 flex items-center gap-3">
-                              {assignedTo && (
-                                <span className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md text-slate-600 dark:text-slate-300 font-medium">
-                                    <User className="size-3"/> {assignedTo}
-                                </span>
-                              )}
-                              {priority && (
-                                <span className={`uppercase tracking-wider font-bold text-[10px] px-1.5 py-0.5 rounded ${priority === 'high' ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400' :
-                                  priority === 'low' ? 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400' :
-                                    'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                                  }`}>
-                                  {priority} Priority
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-center py-16 bg-gray-50 rounded-xl border border-dashed text-muted-foreground">
-                    <CheckSquare className="size-8 mx-auto mb-3 opacity-20" />
-                    <p>No action items found.</p>
-                  </div>
-                )}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="stats" className="mt-0">
-              <div className="space-y-6">
-                {/* Overview Stats Grid */}
-                <div className="grid gap-6 lg:grid-cols-2">
-                  {/* Overall Stats */}
-                  <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
-                    <h3 className="font-medium mb-4 flex items-center gap-2">
-                      <Activity className="size-4 text-blue-500" /> Overview
-                    </h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
-                        <div className="text-slate-500 dark:text-slate-400 text-[10px] uppercase tracking-wider font-bold mb-1">Duration</div>
-                        <div className="text-2xl font-bold text-slate-800 dark:text-slate-200">
-                          {botAnalytics?.meetingAnalytics?.totalDurationSeconds
-                            ? `${Math.floor(botAnalytics.meetingAnalytics.totalDurationSeconds / 60)}m ${botAnalytics.meetingAnalytics.totalDurationSeconds % 60}s`
-                            : '0m'}
-                        </div>
-                      </div>
-                      <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
-                        <div className="text-slate-500 dark:text-slate-400 text-[10px] uppercase tracking-wider font-bold mb-1">Speakers</div>
-                        <div className="text-2xl font-bold text-slate-800 dark:text-slate-200">
-                          {botAnalytics?.meetingAnalytics?.totalSpeakers || 0}
-                        </div>
-                      </div>
-                      <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
-                        <div className="text-slate-500 dark:text-slate-400 text-[10px] uppercase tracking-wider font-bold mb-1">Words</div>
-                        <div className="text-2xl font-bold text-slate-800 dark:text-slate-200">
-                          {botAnalytics?.meetingAnalytics?.totalWords || 0}
-                        </div>
-                      </div>
-                      <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
-                        <div className="text-slate-500 dark:text-slate-400 text-[10px] uppercase tracking-wider font-bold mb-1">Questions</div>
-                        <div className="text-2xl font-bold text-slate-800 dark:text-slate-200">
-                          {botAnalytics?.meetingAnalytics?.questionCount || 0}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Speaker Breakdown */}
-                  <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
-                    <h3 className="font-medium mb-4 flex items-center gap-2">
-                      <Users className="size-4 text-indigo-500" /> Speaker Breakdown
-                    </h3>
-                    <div className="space-y-4">
-                      {botAnalytics?.speakerStats?.map((speaker: any, i: number) => (
-                        <div key={i} className="flex items-center gap-4">
-                          <div className="size-8 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center text-blue-700 font-bold text-xs uppercase shadow-sm border border-white dark:border-slate-800">
-                            {(speaker.speakerLabel || speaker.speaker || '?').substring(0, 1)}
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex justify-between mb-1.5">
-                              <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{speaker.speakerLabel || speaker.speaker || 'Unknown'}</span>
-                              <span className="text-xs text-muted-foreground font-mono">
-                                {Math.floor(speaker.speakingTimeSeconds / 60)}m {Math.floor(speaker.speakingTimeSeconds % 60)}s
-                              </span>
-                            </div>
-                            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-blue-500 rounded-full"
-                                style={{
-                                  width: `${Math.min(100, (speaker.speakingTimeSeconds / (botAnalytics.meetingAnalytics?.totalDurationSeconds || 1)) * 100)}%`
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      {(!botAnalytics?.speakerStats || botAnalytics.speakerStats.length === 0) && (
-                        <div className="text-center py-8 text-muted-foreground text-sm border border-dashed rounded-lg">No speaker data available</div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Key Topics */}
-                {botAnalytics?.meetingAnalytics?.topicsDiscussed && botAnalytics.meetingAnalytics.topicsDiscussed.length > 0 && (
-                  <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
-                    <h3 className="font-medium mb-4 flex items-center gap-2">
-                      🎯 Key Topics
-                    </h3>
-                    <div className="flex flex-wrap gap-2">
-                      {botAnalytics.meetingAnalytics.topicsDiscussed.map((topic: string, i: number) => (
-                        <span key={i} className="px-3 py-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-sm font-medium border border-blue-100 dark:border-blue-800/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors cursor-default">
-                          {topic}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Engagement Metrics */}
-                <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
-                  <h3 className="font-medium mb-4 flex items-center gap-2">
-                    <Activity className="size-4" /> Engagement Metrics
-                  </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-xl border border-purple-100 dark:border-purple-800/50">
-                      <div className="text-purple-600 dark:text-purple-400 text-[10px] uppercase tracking-wider font-bold mb-1">Questions Asked</div>
-                      <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">{botAnalytics?.meetingAnalytics?.questionCount || 0}</div>
-                    </div>
-                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800/50">
-                      <div className="text-blue-600 dark:text-blue-400 text-[10px] uppercase tracking-wider font-bold mb-1">Total Turns</div>
-                      <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">
-                        {botAnalytics?.speakerStats?.reduce((sum: number, s: any) => sum + (s.turnCount || 0), 0) || 0}
-                      </div>
-                    </div>
-                    <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-100 dark:border-green-800/50">
-                      <div className="text-green-600 dark:text-green-400 text-[10px] uppercase tracking-wider font-bold mb-1">Words/Min</div>
-                      <div className="text-2xl font-bold text-green-900 dark:text-green-100">
-                        {botAnalytics?.meetingAnalytics?.totalDurationSeconds && botAnalytics?.meetingAnalytics?.totalWords
-                          ? Math.round(botAnalytics.meetingAnalytics.totalWords / (botAnalytics.meetingAnalytics.totalDurationSeconds / 60))
-                          : 0}
-                      </div>
-                    </div>
-                    <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-100 dark:border-amber-800/50">
-                      <div className="text-amber-600 dark:text-amber-400 text-[10px] uppercase tracking-wider font-bold mb-1">Balance Score</div>
-                      <div className="text-2xl font-bold text-amber-900 dark:text-amber-100">
-                        {(() => {
-                          const stats = botAnalytics?.speakerStats;
-                          if (!stats || stats.length === 0) return '--';
-                          const totalTime = stats.reduce((s: number, sp: any) => s + (sp.speakingTimeSeconds || 0), 0);
-                          if (totalTime === 0) return '--';
-                          const ideal = 1 / stats.length;
-                          const deviation = stats.reduce((s: number, sp: any) => {
-                            const actual = (sp.speakingTimeSeconds || 0) / totalTime;
-                            return s + Math.abs(actual - ideal);
-                          }, 0) / stats.length;
-                          return `${Math.round((1 - deviation) * 100)}%`;
+                                      </h4>
+                                      {renderSummaryContent(sec.content)}
+                                    </div>
+                                  ))}
+                              </div>
+                            </>
+                          );
                         })()}
+                      </>
+                    ) : (
+                      <div className="text-center py-16 bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-dashed dark:border-slate-700 text-muted-foreground">
+                        <Loader2 className="size-8 animate-spin mx-auto mb-3 opacity-20" />
+                        <p>No summary available yet.</p>
                       </div>
-                    </div>
-                  </div>
+                    ))}
                 </div>
+              </TabsContent>
 
-                {/* Speaker Participation Stacked Bar */}
-                {botAnalytics?.speakerStats && botAnalytics.speakerStats.length > 0 && (
-                  <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
-                    <h3 className="font-medium mb-6 flex items-center gap-2">
-                      <Users className="size-4" /> Speaker Participation
-                    </h3>
-                    <div className="h-12 flex rounded-xl overflow-hidden mb-6 shadow-inner bg-slate-100 dark:bg-slate-800">
-                      {botAnalytics.speakerStats.map((speaker: any, i: number) => {
-                        const totalTime = botAnalytics.speakerStats.reduce((s: number, sp: any) => s + (sp.speakingTimeSeconds || 0), 0);
-                        const pct = totalTime > 0 ? ((speaker.speakingTimeSeconds || 0) / totalTime) * 100 : 0;
-                        const colors = ['bg-blue-500', 'bg-orange-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500', 'bg-teal-500', 'bg-amber-500', 'bg-indigo-500'];
+              <TabsContent value="actions" className="mt-0">
+                <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
+                  <h3 className="font-medium mb-6 flex items-center gap-2"><CheckSquare className="size-4 text-green-500" /> Action Items</h3>
+                  {botActionItems && botActionItems.length > 0 ? (
+                    <div className="grid gap-3">
+                      {botActionItems.map((item: any, index: number) => {
+                        const text = typeof item === 'string' ? item : item.item || item.text || 'No description';
+                        const priority = item.priority || 'medium';
+                        const assignedTo = item.assignedTo;
                         return (
-                          <div
-                            key={i}
-                            className={`${colors[i % colors.length]} transition-all flex items-center justify-center text-white text-xs font-bold`}
-                            style={{ width: `${pct}%` }}
-                            title={`${speaker.speakerLabel || speaker.speaker}: ${Math.round(pct)}%`}
-                          >
-                             {pct > 5 && `${Math.round(pct)}%`}
+                          <div key={item.id || index} className="flex items-start gap-4 p-4 rounded-xl border border-slate-100 dark:border-slate-700 hover:border-blue-200 dark:hover:border-blue-800 hover:shadow-sm transition-all bg-white dark:bg-slate-900 group">
+                            <div className={`mt-1.5 size-2.5 rounded-full flex-shrink-0 ${priority === 'high' ? 'bg-red-500 shadow-red-200 dark:shadow-red-900 shadow-lg' :
+                              priority === 'low' ? 'bg-slate-400' :
+                                'bg-amber-500 shadow-amber-200 dark:shadow-amber-900 shadow-lg'
+                              }`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-slate-800 dark:text-slate-200 leading-relaxed">{text}</div>
+                              <div className="text-xs text-muted-foreground mt-2 flex items-center gap-3">
+                                {assignedTo && (
+                                  <span className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md text-slate-600 dark:text-slate-300 font-medium">
+                                    <User className="size-3" /> {assignedTo}
+                                  </span>
+                                )}
+                                {priority && (
+                                  <span className={`uppercase tracking-wider font-bold text-[10px] px-1.5 py-0.5 rounded ${priority === 'high' ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400' :
+                                    priority === 'low' ? 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400' :
+                                      'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                                    }`}>
+                                    {priority} Priority
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         );
                       })}
                     </div>
-                   
-                    {/* Detailed Table */}
-                    <div className="mt-6 overflow-hidden border dark:border-slate-800 rounded-xl">
-                      <table className="w-full text-sm">
-                        <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400">
-                          <tr>
-                            <th className="text-left py-3 px-4 font-bold text-xs uppercase tracking-wider">Speaker</th>
-                            <th className="text-right py-3 px-4 font-bold text-xs uppercase tracking-wider">Time</th>
-                            <th className="text-right py-3 px-4 font-bold text-xs uppercase tracking-wider">Words</th>
-                            <th className="text-right py-3 px-4 font-bold text-xs uppercase tracking-wider">Turns</th>
-                            <th className="text-right py-3 px-4 font-bold text-xs uppercase tracking-wider">questions</th>
-                            <th className="text-right py-3 px-4 font-bold text-xs uppercase tracking-wider">WPM</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                          {botAnalytics.speakerStats.map((speaker: any, i: number) => {
-                            const mins = Math.floor((speaker.speakingTimeSeconds || 0) / 60);
-                            const secs = Math.floor((speaker.speakingTimeSeconds || 0) % 60);
-                            const wpm = speaker.speakingTimeSeconds > 0
-                              ? Math.round((speaker.wordCount || 0) / (speaker.speakingTimeSeconds / 60))
-                              : 0;
-                            return (
-                              <tr key={i} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
-                                <td className="py-3 px-4 font-medium text-slate-800 dark:text-slate-200">{speaker.speakerLabel || speaker.speaker || 'Unknown'}</td>
-                                <td className="text-right py-3 px-4 text-slate-600 dark:text-slate-400 font-mono text-xs">{mins}m {secs}s</td>
-                                <td className="text-right py-3 px-4 text-slate-600 dark:text-slate-400 font-mono text-xs">{(speaker.wordCount || 0).toLocaleString()}</td>
-                                <td className="text-right py-3 px-4 text-slate-600 dark:text-slate-400 font-mono text-xs">{speaker.turnCount || 0}</td>
-                                <td className="text-right py-3 px-4">
-                                  <span className={(speaker.questionCount || 0) > 0 ? 'inline-flex items-center justify-center min-w-[1.5rem] h-6 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-full px-2 text-xs font-bold' : 'text-slate-400 dark:text-slate-600'}>
-                                    {speaker.questionCount || 0}
-                                  </span>
-                                </td>
-                                <td className="text-right py-3 px-4 text-slate-600 dark:text-slate-400 font-mono text-xs">{wpm}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                  ) : (
+                    <div className="text-center py-16 bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-dashed dark:border-slate-700 text-muted-foreground">
+                      <CheckSquare className="size-8 mx-auto mb-3 opacity-20" />
+                      <p>No action items found.</p>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="stats" className="mt-0">
+                <div className="space-y-6">
+                  {/* Overview Stats Grid */}
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    {/* Overall Stats */}
+                    <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
+                      <h3 className="font-medium mb-4 flex items-center gap-2">
+                        <Activity className="size-4 text-blue-500" /> Overview
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
+                          <div className="text-slate-500 dark:text-slate-400 text-[10px] uppercase tracking-wider font-bold mb-1">Duration</div>
+                          <div className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+                            {botAnalytics?.meetingAnalytics?.totalDurationSeconds
+                              ? `${Math.floor(botAnalytics.meetingAnalytics.totalDurationSeconds / 60)}m ${botAnalytics.meetingAnalytics.totalDurationSeconds % 60}s`
+                              : '0m'}
+                          </div>
+                        </div>
+                        <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
+                          <div className="text-slate-500 dark:text-slate-400 text-[10px] uppercase tracking-wider font-bold mb-1">Speakers</div>
+                          <div className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+                            {botAnalytics?.meetingAnalytics?.totalSpeakers || 0}
+                          </div>
+                        </div>
+                        <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
+                          <div className="text-slate-500 dark:text-slate-400 text-[10px] uppercase tracking-wider font-bold mb-1">Words</div>
+                          <div className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+                            {botAnalytics?.meetingAnalytics?.totalWords || 0}
+                          </div>
+                        </div>
+                        <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
+                          <div className="text-slate-500 dark:text-slate-400 text-[10px] uppercase tracking-wider font-bold mb-1">Questions</div>
+                          <div className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+                            {botAnalytics?.meetingAnalytics?.questionCount || 0}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Speaker Breakdown */}
+                    <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
+                      <h3 className="font-medium mb-4 flex items-center gap-2">
+                        <Users className="size-4 text-indigo-500" /> Speaker Breakdown
+                      </h3>
+                      <div className="space-y-4">
+                        {botAnalytics?.speakerStats?.map((speaker: any, i: number) => (
+                          <div key={i} className="flex items-center gap-4">
+                            <div className="size-8 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center text-blue-700 font-bold text-xs uppercase shadow-sm border border-white dark:border-slate-800">
+                              {(speaker.speakerLabel || speaker.speaker || '?').substring(0, 1)}
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex justify-between mb-1.5">
+                                <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{speaker.speakerLabel || speaker.speaker || 'Unknown'}</span>
+                                <span className="text-xs text-muted-foreground font-mono">
+                                  {Math.floor(speaker.speakingTimeSeconds / 60)}m {Math.floor(speaker.speakingTimeSeconds % 60)}s
+                                </span>
+                              </div>
+                              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-blue-500 rounded-full"
+                                  style={{
+                                    width: `${Math.min(100, (speaker.speakingTimeSeconds / (botAnalytics.meetingAnalytics?.totalDurationSeconds || 1)) * 100)}%`
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {(!botAnalytics?.speakerStats || botAnalytics.speakerStats.length === 0) && (
+                          <div className="text-center py-8 text-muted-foreground text-sm border border-dashed rounded-lg">No speaker data available</div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                )}
-              </div>
-            </TabsContent>
-          </div>
 
-           {isAskOnixOpen && (
-             <div className="w-[380px] flex-shrink-0 sticky top-24 self-start h-[calc(100vh-14rem)] flex flex-col bg-white dark:bg-slate-950 border dark:border-slate-800 rounded-xl shadow-sm animate-in slide-in-from-right-5 duration-300 overflow-hidden mt-0">
-                <AskOnixPanel 
+                  {/* Key Topics */}
+                  {botAnalytics?.meetingAnalytics?.topicsDiscussed && botAnalytics.meetingAnalytics.topicsDiscussed.length > 0 && (
+                    <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
+                      <h3 className="font-medium mb-4 flex items-center gap-2">
+                        🎯 Key Topics
+                      </h3>
+                      <div className="flex flex-wrap gap-2">
+                        {botAnalytics.meetingAnalytics.topicsDiscussed.map((topic: string, i: number) => (
+                          <span key={i} className="px-3 py-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-sm font-medium border border-blue-100 dark:border-blue-800/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors cursor-default">
+                            {topic}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Engagement Metrics */}
+                  <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
+                    <h3 className="font-medium mb-4 flex items-center gap-2">
+                      <Activity className="size-4" /> Engagement Metrics
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-xl border border-purple-100 dark:border-purple-800/50">
+                        <div className="text-purple-600 dark:text-purple-400 text-[10px] uppercase tracking-wider font-bold mb-1">Questions Asked</div>
+                        <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">{botAnalytics?.meetingAnalytics?.questionCount || 0}</div>
+                      </div>
+                      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800/50">
+                        <div className="text-blue-600 dark:text-blue-400 text-[10px] uppercase tracking-wider font-bold mb-1">Total Turns</div>
+                        <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">
+                          {botAnalytics?.speakerStats?.reduce((sum: number, s: any) => sum + (s.turnCount || 0), 0) || 0}
+                        </div>
+                      </div>
+                      <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-100 dark:border-green-800/50">
+                        <div className="text-green-600 dark:text-green-400 text-[10px] uppercase tracking-wider font-bold mb-1">Words/Min</div>
+                        <div className="text-2xl font-bold text-green-900 dark:text-green-100">
+                          {botAnalytics?.meetingAnalytics?.totalDurationSeconds && botAnalytics?.meetingAnalytics?.totalWords
+                            ? Math.round(botAnalytics.meetingAnalytics.totalWords / (botAnalytics.meetingAnalytics.totalDurationSeconds / 60))
+                            : 0}
+                        </div>
+                      </div>
+                      <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-100 dark:border-amber-800/50">
+                        <div className="text-amber-600 dark:text-amber-400 text-[10px] uppercase tracking-wider font-bold mb-1">Balance Score</div>
+                        <div className="text-2xl font-bold text-amber-900 dark:text-amber-100">
+                          {(() => {
+                            const stats = botAnalytics?.speakerStats;
+                            if (!stats || stats.length === 0) return '--';
+                            const totalTime = stats.reduce((s: number, sp: any) => s + (sp.speakingTimeSeconds || 0), 0);
+                            if (totalTime === 0) return '--';
+                            const ideal = 1 / stats.length;
+                            const deviation = stats.reduce((s: number, sp: any) => {
+                              const actual = (sp.speakingTimeSeconds || 0) / totalTime;
+                              return s + Math.abs(actual - ideal);
+                            }, 0) / stats.length;
+                            return `${Math.round((1 - deviation) * 100)}%`;
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Speaker Participation Stacked Bar */}
+                  {botAnalytics?.speakerStats && botAnalytics.speakerStats.length > 0 && (
+                    <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
+                      <h3 className="font-medium mb-6 flex items-center gap-2">
+                        <Users className="size-4" /> Speaker Participation
+                      </h3>
+                      <div className="h-12 flex rounded-xl overflow-hidden mb-6 shadow-inner bg-slate-100 dark:bg-slate-800">
+                        {botAnalytics.speakerStats.map((speaker: any, i: number) => {
+                          const totalTime = botAnalytics.speakerStats.reduce((s: number, sp: any) => s + (sp.speakingTimeSeconds || 0), 0);
+                          const pct = totalTime > 0 ? ((speaker.speakingTimeSeconds || 0) / totalTime) * 100 : 0;
+                          const colors = ['bg-blue-500', 'bg-orange-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500', 'bg-teal-500', 'bg-amber-500', 'bg-indigo-500'];
+                          return (
+                            <div
+                              key={i}
+                              className={`${colors[i % colors.length]} transition-all flex items-center justify-center text-white text-xs font-bold`}
+                              style={{ width: `${pct}%` }}
+                              title={`${speaker.speakerLabel || speaker.speaker}: ${Math.round(pct)}%`}
+                            >
+                              {pct > 5 && `${Math.round(pct)}%`}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Detailed Table */}
+                      <div className="mt-6 overflow-hidden border dark:border-slate-800 rounded-xl">
+                        <table className="w-full text-sm">
+                          <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400">
+                            <tr>
+                              <th className="text-left py-3 px-4 font-bold text-xs uppercase tracking-wider">Speaker</th>
+                              <th className="text-right py-3 px-4 font-bold text-xs uppercase tracking-wider">Time</th>
+                              <th className="text-right py-3 px-4 font-bold text-xs uppercase tracking-wider">Words</th>
+                              <th className="text-right py-3 px-4 font-bold text-xs uppercase tracking-wider">Turns</th>
+                              <th className="text-right py-3 px-4 font-bold text-xs uppercase tracking-wider">questions</th>
+                              <th className="text-right py-3 px-4 font-bold text-xs uppercase tracking-wider">WPM</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                            {botAnalytics.speakerStats.map((speaker: any, i: number) => {
+                              const mins = Math.floor((speaker.speakingTimeSeconds || 0) / 60);
+                              const secs = Math.floor((speaker.speakingTimeSeconds || 0) % 60);
+                              const wpm = speaker.speakingTimeSeconds > 0
+                                ? Math.round((speaker.wordCount || 0) / (speaker.speakingTimeSeconds / 60))
+                                : 0;
+                              return (
+                                <tr key={i} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
+                                  <td className="py-3 px-4 font-medium text-slate-800 dark:text-slate-200">{speaker.speakerLabel || speaker.speaker || 'Unknown'}</td>
+                                  <td className="text-right py-3 px-4 text-slate-600 dark:text-slate-400 font-mono text-xs">{mins}m {secs}s</td>
+                                  <td className="text-right py-3 px-4 text-slate-600 dark:text-slate-400 font-mono text-xs">{(speaker.wordCount || 0).toLocaleString()}</td>
+                                  <td className="text-right py-3 px-4 text-slate-600 dark:text-slate-400 font-mono text-xs">{speaker.turnCount || 0}</td>
+                                  <td className="text-right py-3 px-4">
+                                    <span className={(speaker.questionCount || 0) > 0 ? 'inline-flex items-center justify-center min-w-[1.5rem] h-6 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-full px-2 text-xs font-bold' : 'text-slate-400 dark:text-slate-600'}>
+                                      {speaker.questionCount || 0}
+                                    </span>
+                                  </td>
+                                  <td className="text-right py-3 px-4 text-slate-600 dark:text-slate-400 font-mono text-xs">{wpm}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+            </div>
+
+            {isAskOnixOpen && (
+              <div className="w-[380px] flex-shrink-0 sticky top-24 self-start h-[calc(100vh-14rem)] flex flex-col bg-white dark:bg-slate-950 border dark:border-slate-800 rounded-xl shadow-sm animate-in slide-in-from-right-5 duration-300 overflow-hidden mt-0">
+                <AskOnixPanel
                   onClose={() => setIsAskOnixOpen(false)}
                   meetingId={botId || ''}
                   meetingTitle={botMeeting?.title || 'Meeting'}
                   transcript={liveSegments.length > 0 ? liveSegments : segments}
                 />
-             </div>
-           )}
-        </div>
-      </Tabs>
+              </div>
+            )}
+          </div>
+        </Tabs>
 
         <EmailRecipientsDialog
           open={isEmailDialogOpen}
