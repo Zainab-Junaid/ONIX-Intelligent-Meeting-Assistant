@@ -2,18 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import admin from 'firebase-admin';
+import { getFirebaseAdmin } from '@/lib/firebase-admin';
 
-// Initialize Firebase Admin if not already initialized
-if (!admin.apps.length) {
-    try {
-        const serviceAccount = require('../../../../backend/firebase-service-account.json');
-        admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount)
-        });
-    } catch (error) {
-        console.error('Failed to initialize Firebase Admin:', error);
-    }
-}
+// Initialize Firebase Admin
+getFirebaseAdmin();
 
 export async function GET(request: NextRequest) {
     try {

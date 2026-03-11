@@ -4,6 +4,7 @@ import admin from 'firebase-admin';
 import { AssemblyAI } from 'assemblyai';
 import { setGlobalDispatcher, Agent } from 'undici';
 import { setDefaultResultOrder } from 'node:dns';
+import { getFirebaseAdmin } from '@/lib/firebase-admin';
 
 // Fix for Node 17+ (and Node 22) favoring IPv6, causing timeouts with some APIs
 try {
@@ -22,13 +23,8 @@ setGlobalDispatcher(new Agent({
   bodyTimeout: 60000,
 }));
 
-// Initialize Firebase Admin if not already initialized
-if (!admin.apps.length) {
-  const serviceAccount = require('../../../../backend/firebase-service-account.json');
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
-}
+// Initialize Firebase Admin
+getFirebaseAdmin();
 
 export async function POST(request: NextRequest) {
   try {

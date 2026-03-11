@@ -1,24 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from 'firebase-admin/auth';
 import admin from 'firebase-admin';
+import { getFirebaseAdmin } from '@/lib/firebase-admin';
 
 const RECORDING_MAX_SIZE = 500 * 1024 * 1024; // 500 MB
 const SIGNED_URL_EXPIRY_DAYS = 7;
 
-function getAdminApp() {
-  if (!admin.apps.length) {
-    const serviceAccount = require('../../../../backend/firebase-service-account.json');
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      storageBucket: `${serviceAccount.project_id}.appspot.com`,
-    });
-  }
-  return admin.app();
-}
+// Initialize Firebase Admin
+getFirebaseAdmin();
 
 export async function POST(request: NextRequest) {
   try {
-    getAdminApp();
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'No token provided' }, { status: 401 });

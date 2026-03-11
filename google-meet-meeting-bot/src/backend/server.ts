@@ -821,6 +821,10 @@ app.get("/list/meetings", async (_req, res) => {
         createdAt: true,
         analytics: {
           select: { totalSpeakers: true, totalDurationSeconds: true }
+        },
+        meetingJobs: {
+          select: { userId: true },
+          take: 1,
         }
       }
     });
@@ -839,6 +843,8 @@ app.get("/list/meetings", async (_req, res) => {
       // New Meeting table entries
       ...meetings.map((m) => ({
         meetingId: m.mongoTranscriptId || m.id,
+        postgresId: m.id,
+        userId: m.meetingJobs?.[0]?.userId || null,
         title: m.title || 'Untitled Meeting',
         createdAtMs: Number(new Date(m.createdAt).getTime()),
         meetingUrl: m.externalMeetId || null,
@@ -857,6 +863,8 @@ app.get("/list/meetings", async (_req, res) => {
         .filter(j => j.meetingId && !meetingIdSet.has(j.id))
         .map((j) => ({
           meetingId: j.meetingId!,
+          postgresId: j.meetingId,
+          userId: j.userId || null,
           title: j.meetingTitle || 'Untitled Meeting',
           createdAtMs: Number(new Date(j.createdAt).getTime()),
           meetingUrl: j.meetingUrl || null,
@@ -894,9 +902,9 @@ app.delete("/meetings/:id", async (req, res) => {
       res.status(200).json({ success: true, message: `Meeting ${id} deleted` });
     } else {
       const isNotFound = result.error?.toLowerCase().includes("not found");
-      res.status(isNotFound ? 404 : 500).json({ 
-        error: "Failed to delete meeting", 
-        details: result.error 
+      res.status(isNotFound ? 404 : 500).json({
+        error: "Failed to delete meeting",
+        details: result.error
       });
     }
   } catch (err) {

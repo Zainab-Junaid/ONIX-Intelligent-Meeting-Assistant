@@ -1,5 +1,5 @@
-# ─── base ────────────────────────────────────────────────────────────────
-FROM node:18-slim
+# ─── base (Node 20 required by @firebase/* and firebase-admin) ───────────
+FROM node:20-slim
 ARG CACHEBUST=1
 WORKDIR /app
 
@@ -12,13 +12,14 @@ COPY src/backend/tsconfig.json ./src/backend/
 # ─── source code ─────────────────────────────────────────────────────────
 COPY src ./src
 
-# ─── deps (npm ci = reproducible builds from lock file) ──────────────────
-RUN npm ci \
- && npm ci --prefix ./src/backend
+# ─── deps (npm install so container resolves deps; ci fails when lockfile from different env) ─
+RUN npm install \
+ && npm install --prefix ./src/backend
 
 # ─── Prisma ──────────────────────────────────────────────────────────────
 COPY src/backend/schema.prisma ./prisma/
-RUN npx prisma generate
+RUN apt-get update -y && apt-get install -y openssl \
+ && npx prisma generate
 
 # ─── build ───────────────────────────────────────────────────────────────
 RUN echo "🔧  CACHEBUST=$CACHEBUST - running tsc…" \

@@ -86,10 +86,15 @@ export function AppShell({
                   variant="ghost"
                   size="icon"
                   onClick={() => {
-                    if (typeof window !== "undefined" && window.innerWidth >= 768) {
+                    if (!isSidebarOpen) {
+                      // Sidebar is closed: always open it
+                      setIsSidebarOpen(true)
+                    } else if (typeof window !== "undefined" && window.innerWidth >= 768) {
+                      // Sidebar is open on desktop: toggle collapse
                       setIsCollapsed(!isCollapsed)
                     } else {
-                      setIsSidebarOpen(!isSidebarOpen)
+                      // Sidebar is open on mobile: close it
+                      setIsSidebarOpen(false)
                     }
                   }}
                   aria-label="Toggle menu"

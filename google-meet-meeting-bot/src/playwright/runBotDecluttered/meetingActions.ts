@@ -47,19 +47,18 @@ export async function clickJoin(page: Page): Promise<void> {
         console.log('ℹ "Continue without microphone and camera" not shown');
     }
 
-    // Prefer direct join ("Start", "Join now") so we enter the meeting immediately.
+    // Prefer direct join ("Join now", "Join") so we enter the meeting immediately.
     // "Ask to join" leaves the bot in the lobby until the host admits – use only as fallback.
+    // NOTE: Do NOT use "Start"/"Start meeting" — the bot should join as a participant, not create a meeting.
     const possibleTexts = [
-        "Start",
-        "Start meeting",
         "Join now",
         "Join meeting",
         "Join call",
         "Join",
+        "Ask to join",
         "Done",
         "Continue",
         "Continue to join",
-        "Ask to join",
     ];
 
     for (const text of possibleTexts) {
@@ -146,12 +145,34 @@ export async function waitUntilJoined(page: Page, timeoutMs = 60_000) {
         .waitForFunction(
             (lobbyStrings: string[]) => {
                 const bodyText = document.body.innerText;
+
+                // Direct text indicators that we're in the meeting
                 if (bodyText.includes("You've been admitted") || bodyText.includes("You're the only one here"))
                     return true;
+                if (bodyText.includes("You joined") || bodyText.includes("You're in the meeting"))
+                    return true;
+
+                // Check for Leave call/meeting button (primary indicator)
                 const leaveBtn = document.querySelector(
                     'button[aria-label*="Leave call"], button[aria-label*="Leave meeting"]'
                 );
-                if (!leaveBtn) return false;
+
+                // Check for other in-call UI elements (microphone, camera, people buttons)
+                const micBtn = document.querySelector(
+                    'button[aria-label*="microphone"], button[aria-label*="Microphone"]'
+                );
+                const cameraBtn = document.querySelector(
+                    'button[aria-label*="camera"], button[aria-label*="Camera"]'
+                );
+                const peopleBtn = document.querySelector(
+                    'button[aria-label*="people"], button[aria-label*="People"]'
+                );
+
+                // If we have any meeting control button, we're likely in the call
+                const hasCallControls = leaveBtn || (micBtn && cameraBtn) || (micBtn && peopleBtn);
+                if (!hasCallControls) return false;
+
+                // Make sure we're not stuck in the lobby
                 const inLobby = lobbyStrings.some((t) => bodyText.includes(t));
                 return !inLobby;
             },

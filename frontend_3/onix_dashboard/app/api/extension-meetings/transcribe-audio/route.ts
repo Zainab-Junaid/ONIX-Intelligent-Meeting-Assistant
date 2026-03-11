@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AssemblyAI } from 'assemblyai';
 import { getAuth } from 'firebase-admin/auth';
+import { getFirebaseAdmin } from '@/lib/firebase-admin';
 
-// Initialize Firebase Admin if not already initialized
-if (!require('firebase-admin').apps.length) {
-  const admin = require('firebase-admin');
-  const serviceAccount = require('../../../../backend/firebase-service-account.json');
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
-}
+// Initialize Firebase Admin
+getFirebaseAdmin();
 
 /**
  * POST /api/extension-meetings/transcribe-audio
@@ -26,7 +21,7 @@ export async function POST(request: NextRequest) {
     }
 
     const token = authHeader.split('Bearer ')[1];
-    
+
     // Verify Firebase token
     const decodedToken = await getAuth().verifyIdToken(token);
     const userId = decodedToken.uid;
@@ -38,15 +33,15 @@ export async function POST(request: NextRequest) {
     const isFinal = formData.get('isFinal') === 'true';
 
     if (!audioFile || !meetingId) {
-      return NextResponse.json({ 
-        error: 'Audio file and meetingId are required' 
+      return NextResponse.json({
+        error: 'Audio file and meetingId are required'
       }, { status: 400 });
     }
 
     // Check if AssemblyAI API key is configured
     if (!process.env.ASSEMBLYAI_API_KEY) {
-      return NextResponse.json({ 
-        error: 'ASSEMBLYAI_API_KEY not configured' 
+      return NextResponse.json({
+        error: 'ASSEMBLYAI_API_KEY not configured'
       }, { status: 500 });
     }
 
@@ -89,8 +84,8 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error('❌ Error transcribing audio:', error);
-    return NextResponse.json({ 
-      error: error.message || 'Failed to transcribe audio' 
+    return NextResponse.json({
+      error: error.message || 'Failed to transcribe audio'
     }, { status: 500 });
   }
 }

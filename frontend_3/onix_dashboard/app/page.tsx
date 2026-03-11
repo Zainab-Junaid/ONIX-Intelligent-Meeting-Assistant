@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Bot, CalendarPlus, Video, FileText, CheckSquare, ChevronRight, Mic, ArrowUpRight, ListTodo, Circle } from "lucide-react"
+import { Bot, CalendarPlus, Video, FileText, CheckSquare, ChevronRight, Mic, ArrowUpRight, ListTodo, Circle, User } from "lucide-react"
 import { AppShell } from "@/components/app-shell"
 import Link from "next/link"
 import { useAuth } from "@/components/auth-provider"
@@ -326,6 +326,36 @@ export default function Page() {
                     </div>
 
                     <div className="space-y-5">
+                        <Link href="/settings" className="block group">
+                            <Card className="rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-all flex flex-col">
+                                <CardContent className="p-4 flex flex-col flex-1 min-h-0">
+                                    <div className="flex items-center gap-2.5 mb-2 shrink-0">
+                                        <div className="size-9 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-400">
+                                            <User size={18} />
+                                        </div>
+                                        <h3 className="font-semibold text-foreground">About me</h3>
+                                    </div>
+                                    <div className="flex items-center gap-3 py-2">
+                                        <div className="grid size-10 place-items-center rounded-full bg-blue-500 text-white font-semibold text-sm shrink-0">
+                                            {authUser?.displayName?.[0] || "?"}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="font-medium text-foreground text-sm truncate">{authUser?.displayName || "Guest User"}</p>
+                                            <p className="text-xs text-muted-foreground truncate">{authUser?.email || "Not signed in"}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center justify-between pt-2 border-t border-border/60 shrink-0">
+                                        <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors flex items-center gap-1">
+                                            Account & Settings <ChevronRight className="size-3.5" />
+                                        </span>
+                                        <span className="flex size-9 items-center justify-center rounded-full bg-foreground text-background group-hover:opacity-90 transition-colors shrink-0">
+                                            <ArrowUpRight className="size-4" />
+                                        </span>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </Link>
+
                         <Link href="/tasks" className="block group">
                             <Card className="rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-all flex flex-col max-h-[280px]">
                                 <CardContent className="p-4 flex flex-col flex-1 min-h-0">

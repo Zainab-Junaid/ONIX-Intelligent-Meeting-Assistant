@@ -44,7 +44,7 @@
     "dockerode": "^4.0.2",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
-    "firebase-admin": "^12.5.0",
+    "firebase-admin": "^13.7.0",
     "ioredis": "^5.8.2",
     "mongoose": "^8.0.3",
     "playwright": "^1.52.0",

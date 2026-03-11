@@ -4,14 +4,10 @@ import admin from 'firebase-admin';
 import { sendEmail, generateSummaryEmailHTML } from '@/lib/email-service';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { getFirebaseAdmin } from '@/lib/firebase-admin';
 
-// Initialize Firebase Admin if not already initialized
-if (!admin.apps.length) {
-    const serviceAccount = require('../../../../backend/firebase-service-account.json');
-    admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
-    });
-}
+// Initialize Firebase Admin
+getFirebaseAdmin();
 
 // Helper to organize notes by type
 function organizeNotesByType(notes: any[]) {

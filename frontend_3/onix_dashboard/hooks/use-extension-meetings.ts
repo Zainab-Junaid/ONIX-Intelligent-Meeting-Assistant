@@ -60,8 +60,14 @@ export const useExtensionMeetings = () => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch extension meetings');
+        let message = 'Failed to fetch extension meetings';
+        try {
+          const errorData = await response.json();
+          if (errorData?.error) message = errorData.error;
+        } catch {
+          message = response.statusText || message;
+        }
+        throw new Error(message);
       }
 
       const meetingsData = await response.json();
