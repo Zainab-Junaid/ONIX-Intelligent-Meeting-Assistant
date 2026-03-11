@@ -1106,7 +1106,9 @@ function initUI() {
     }
 
     // Stop recording and upload to dashboard (must run before clearing meeting doc ID)
-    await stopRecordingAndUpload(statusEl)
+    stopRecordingAndUpload(statusEl).catch(err => {
+      console.error('Error stopping recording:', err)
+    })
 
     // Update UI immediately with proper visual feedback
     await saveCapturingState(false)

@@ -803,7 +803,6 @@
 
 <body>
   <div id="wrap" class="wrap">
-    <h1 class="panel-title">Onix Meeting Assistant</h1>
     <div id="auth" class="muted" style="font-size: 12px; flex-shrink: 0;">Not signed in</div>
     <div class="row auth-toggle-row" id="guestSignInRow">
       <div id="authToggle" class="auth-toggle guest-selected" role="group" aria-label="Sign in or continue as guest">
@@ -877,18 +876,18 @@
         <button id="saveBtn" type="button" style="display: none;">Save</button>
         <button id="downloadBtn" type="button" style="display: none;">Download</button>
       </div>
-      <div id="noteInputContainer" style="display: none; margin-top: 8px;">
+      <div id="noteInputContainer" style="display: none; margin-top: 8px; flex-shrink: 0; max-height: calc(100vh - 200px); overflow-y: auto;">
         <div id="imagePreview" style="margin-bottom: 8px; max-width: 100%; display: none;">
           <img id="previewImage"
-            style="max-width: 100%; max-height: 200px; border-radius: 4px; border: 1px solid #ccc;" />
+            style="max-width: 100%; max-height: 80px; object-fit: contain; border-radius: 4px; border: 1px solid #ccc; background-color: #f1f5f9;" />
         </div>
-        <textarea id="noteTextInput" placeholder="Add a caption for this image (optional)..."
-          style="width: 100%; min-height: 60px; padding: 6px 8px; border-radius: 8px; border: 1px solid #ccc; font-size: 13px; resize: vertical;"></textarea>
-        <div class="row" style="margin-top: 4px;">
-          <button id="saveNoteBtn"
-            style="flex: 1; background: #007bff; color: white; border-color: #007bff;">Save</button>
-          <button id="cancelNoteBtn"
-            style="flex: 1; background: #6c757d; color: white; border-color: #6c757d;">Cancel</button>
+        <textarea id="noteTextInput" placeholder="Paste your screenshot here (Ctrl+V) or type a note..."
+          style="width: 100%; min-height: 40px; height: 60px; padding: 6px 8px; border-radius: 8px; border: 1px solid #ccc; font-size: 13px; resize: vertical; box-sizing: border-box;"></textarea>
+        <div class="row" style="margin-top: 8px; gap: 8px;">
+          <button id="saveNoteBtn" class="btn-primary-onix"
+            style="flex: 1;">Save</button>
+          <button id="cancelNoteBtn" class="guest-btn"
+            style="flex: 1; padding: 8px 14px;">Cancel</button>
         </div>
       </div>
       <div id="connectionStatus" class="connection-status status-disconnected" style="display: none;">Disconnected</div>

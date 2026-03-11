@@ -2,40 +2,13 @@
 // This allows testing the dashboard integration without running the actual bot
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from 'firebase-admin/auth';
-import admin from 'firebase-admin';
 import { getFirebaseAdmin } from '@/lib/firebase-admin';
-// MongoDB is optional - will skip if not available
-let mongoose: any;
-try {
-  mongoose = require('mongoose');
-} catch {
-  // mongoose not installed, MongoDB features will be skipped
-  mongoose = null;
-}
 
 // Initialize Firebase Admin
 getFirebaseAdmin();
 
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/meeting-transcripts';
-
-// MongoDB Schema (matching bot structure)
-const SegmentSchema = new mongoose.Schema({
-  segmentId: { type: String, required: true },
-  start: { type: Number, required: true },
-  end: { type: Number, required: true },
-  text: { type: String, required: true },
-  speaker: { type: String, required: true },
-}, { _id: false });
-
-const MeetingTranscriptSchema = new mongoose.Schema({
-  meetingId: { type: String, required: true, unique: true, index: true },
-  userId: { type: String, index: true },
-  meetingTitle: { type: String },
-  segments: { type: [SegmentSchema], default: [] },
-  createdAt: { type: Date, required: true, default: Date.now },
-  updatedAt: { type: Date, required: true, default: Date.now },
-});
 
 // POST endpoint to create test data
 export async function POST(request: NextRequest) {
@@ -65,8 +38,33 @@ export async function POST(request: NextRequest) {
     // Connect to MongoDB (optional)
     let mongoConnected = false;
     let MeetingTranscriptModel: any = null;
+    let mongoose: any = null;
+
+    try {
+      mongoose = require('mongoose');
+    } catch {
+      console.warn('Mongoose not installed, skipping MongoDB connection');
+    }
 
     if (mongoose) {
+      // MongoDB Schema (matching bot structure)
+      const SegmentSchema = new mongoose.Schema({
+        segmentId: { type: String, required: true },
+        start: { type: Number, required: true },
+        end: { type: Number, required: true },
+        text: { type: String, required: true },
+        speaker: { type: String, required: true },
+      }, { _id: false });
+
+      const MeetingTranscriptSchema = new mongoose.Schema({
+        meetingId: { type: String, required: true, unique: true, index: true },
+        userId: { type: String, index: true },
+        meetingTitle: { type: String },
+        segments: { type: [SegmentSchema], default: [] },
+        createdAt: { type: Date, required: true, default: Date.now },
+        updatedAt: { type: Date, required: true, default: Date.now },
+      });
+
       try {
         if (mongoose.connection.readyState === 0) {
           await mongoose.connect(MONGODB_URI);
