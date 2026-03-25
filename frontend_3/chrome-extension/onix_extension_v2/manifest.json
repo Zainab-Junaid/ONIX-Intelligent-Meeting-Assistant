@@ -9,8 +9,7 @@
     "tabs",
     "scripting",
     "sidePanel",
-    "identity",
-    "tabCapture"
+    "identity"
   ],
   "host_permissions": [
     "https://meet.google.com/*",

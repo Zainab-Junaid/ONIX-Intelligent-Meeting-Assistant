@@ -28,14 +28,9 @@ const SPEAKER_COLORS = [
   { bg: 'bg-amber-50 dark:bg-amber-900/20', border: 'border-amber-300 dark:border-amber-800/50', text: 'text-amber-700 dark:text-amber-400', badge: 'bg-amber-500' },
 ];
 
-// Get color for a speaker based on their name
+// Get color for a speaker sequentially to guarantee uniqueness up to palette size
 function getSpeakerColor(speakerName: string, speakerIndex: number): typeof SPEAKER_COLORS[0] {
-  let hash = 0;
-  for (let i = 0; i < speakerName.length; i++) {
-    hash = speakerName.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const colorIndex = Math.abs(hash) % SPEAKER_COLORS.length;
-  return SPEAKER_COLORS[colorIndex];
+  return SPEAKER_COLORS[speakerIndex % SPEAKER_COLORS.length];
 }
 
 // Format timestamp (seconds) to MM:SS

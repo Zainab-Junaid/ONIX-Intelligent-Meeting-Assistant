@@ -58,6 +58,51 @@ const cleanLine = (text: string): string => {
     .replace(/^[\-•]\s+/, '')   // leading bullet markers
     .trim();
 };
+// Parse flat text transcript (e.g., from extension) into Segments for SpeakerTranscript
+const parseTranscriptToSegments = (text: string) => {
+  if (!text) return [];
+  const lines = text.split('\n');
+  const segments: { speaker: string; text: string }[] = [];
+  let currentSpeaker = 'Unknown Speaker';
+  let currentText = '';
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    // Match "Speaker Name: text" or "**Speaker Name:** text"
+    const speakerMatch = line.match(/^(\*\*.*?\*\*|[^:]+):\s*(.*)/);
+    if (speakerMatch && speakerMatch[1].length < 40) { // arbitrary length to avoid matching long sentences with a colon
+      if (currentText.trim()) {
+        segments.push({ speaker: currentSpeaker, text: currentText.trim() });
+      }
+      currentSpeaker = speakerMatch[1].replace(/\*\*/g, '').trim();
+      currentText = speakerMatch[2] + ' ';
+    } else {
+      currentText += line + ' ';
+    }
+  }
+  if (currentText.trim()) {
+    segments.push({ speaker: currentSpeaker, text: currentText.trim() });
+  }
+  return segments;
+};
+
+const SPEAKER_COLORS = [
+  { bg: 'bg-blue-100', text: 'text-blue-700', bar: 'bg-blue-500', gradient: 'from-blue-100 to-indigo-100' },
+  { bg: 'bg-orange-100', text: 'text-orange-700', bar: 'bg-orange-500', gradient: 'from-orange-100 to-amber-100' },
+  { bg: 'bg-green-100', text: 'text-green-700', bar: 'bg-green-500', gradient: 'from-green-100 to-emerald-100' },
+  { bg: 'bg-purple-100', text: 'text-purple-700', bar: 'bg-purple-500', gradient: 'from-purple-100 to-fuchsia-100' },
+  { bg: 'bg-pink-100', text: 'text-pink-700', bar: 'bg-pink-500', gradient: 'from-pink-100 to-rose-100' },
+  { bg: 'bg-indigo-100', text: 'text-indigo-700', bar: 'bg-indigo-500', gradient: 'from-indigo-100 to-slate-200' },
+  { bg: 'bg-teal-100', text: 'text-teal-700', bar: 'bg-teal-500', gradient: 'from-teal-100 to-cyan-100' },
+  { bg: 'bg-amber-100', text: 'text-amber-700', bar: 'bg-amber-500', gradient: 'from-amber-100 to-yellow-100' },
+];
+
+function getSpeakerColor(speakerName: string, uniqueArray: string[] = []) {
+  if (!speakerName) return SPEAKER_COLORS[0];
+  const idx = uniqueArray.indexOf(speakerName);
+  const index = idx !== -1 ? idx : 0;
+  return SPEAKER_COLORS[index % SPEAKER_COLORS.length];
+}
 
 // Render markdown text as heading + body format, simple and clean
 const renderSummaryContent = (text: string) => {
@@ -1220,53 +1265,64 @@ export default function Page() {
     }
     if (!extensionMeeting) return <div className="p-6">Extension meeting not found.</div>
 
-    const hasRecording = !!(extensionMeeting as any).recordingUrl || !!(extensionMeeting as any).recordingStoragePath
-    const displayRecordingUrl = recordingUrl || (extensionMeeting as any).recordingUrl || null
-
     return (
       <AppShell title={extensionMeeting.title} subtitle={`Created ${extensionMeeting.createdAt ? new Date(extensionMeeting.createdAt).toLocaleString('en-US', {
         timeZone: 'Asia/Karachi',
         year: 'numeric', month: 'short', day: 'numeric',
         hour: '2-digit', minute: '2-digit', hour12: true
       }) : ''} ${extensionMeeting.sessionCount ? `| Sessions: ${extensionMeeting.sessionCount}` : ''}`}>
-        <div className="space-y-6">
-          {/* Modern Tabs */}
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'transcript' | 'summary' | 'notes' | 'recording')} className="w-full">
-            <TabsList className="w-full max-w-2xl flex flex-wrap">
-              <TabsTrigger value="transcript" className="flex-1">
-                <FileText className="size-4 mr-2" />
-                Transcript
-              </TabsTrigger>
-              <TabsTrigger value="summary" className="flex-1">
+        
+        <div className="flex gap-6 items-start relative group/layout">
+          <div className="flex-1 space-y-4 min-w-0 pr-2">
+            
+            {/* Modern Tabs */}
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'transcript' | 'summary' | 'notes')} className="w-full">
+              <TabsList className="w-full max-w-2xl flex flex-wrap h-auto bg-slate-100/80 dark:bg-slate-800/80 p-1 gap-2 border-b border-white/20 dark:border-slate-700/50">
+                <TabsTrigger value="transcript" className="flex-1 min-w-[100px] gap-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 dark:data-[state=active]:text-white data-[state=active]:shadow-sm">
+                  <FileText className="size-4 mr-2" />
+                  Transcript
+                </TabsTrigger>
+              <TabsTrigger value="summary" className="flex-1 min-w-[100px] gap-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 dark:data-[state=active]:text-white data-[state=active]:shadow-sm">
                 <FileText className="size-4 mr-2" />
                 Summary
               </TabsTrigger>
-              <TabsTrigger value="notes" className="flex-1">
+              <TabsTrigger value="notes" className="flex-1 min-w-[100px] gap-2 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 dark:data-[state=active]:text-white data-[state=active]:shadow-sm">
                 <Download className="size-4 mr-2" />
                 Notes {extensionMeeting.notes && extensionMeeting.notes.length > 0 && `(${extensionMeeting.notes.length})`}
-              </TabsTrigger>
-              <TabsTrigger value="recording" className="flex-1">
-                <Video className="size-4 mr-2" />
-                Recording
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="transcript" className="mt-6">
-              <div className="rounded-lg border p-6 bg-white shadow-sm space-y-4">
-                <div>
-                  <h3 className="font-medium mb-2">Original Transcript</h3>
-                  <div className="whitespace-pre-wrap text-sm border-l-4 border-gray-200 pl-4">
-                    {extensionMeeting.transcript || 'No transcript available.'}
-                  </div>
+              <div className="rounded-lg border dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm space-y-4">
+                <div className="p-4 border-b dark:border-slate-800 flex items-center justify-between">
+                  <h3 className="font-medium text-slate-800 dark:text-slate-200">Original Transcript</h3>
+                </div>
+                
+                <div className="p-6">
+                  {extensionMeeting.transcript ? (
+                    <SpeakerTranscript
+                      segments={parseTranscriptToSegments(extensionMeeting.transcript)}
+                      isLive={false}
+                      meetingEnded={true}
+                    />
+                  ) : (
+                    <div className="text-sm text-muted-foreground text-center py-8 border-2 border-dashed border-gray-100 dark:border-slate-800 rounded-xl">
+                      No transcript available.
+                    </div>
+                  )}
                 </div>
 
                 {extensionMeeting.translatedTranscript && (
-                  <div className="mt-6 pt-6 border-t">
-                    <h3 className="font-medium mb-2 flex items-center gap-2">
-                      <span>🇬🇧</span> Translated Transcript (English)
-                    </h3>
-                    <div className="whitespace-pre-wrap text-sm bg-gray-50 p-4 rounded border">
-                      {extensionMeeting.translatedTranscript}
+                  <div className="mt-6 border-t dark:border-slate-800">
+                    <div className="p-4 border-b dark:border-slate-800 flex items-center gap-2">
+                       <h3 className="font-medium text-slate-800 dark:text-slate-200"><span>🇬🇧</span> Translated Transcript (English)</h3>
+                    </div>
+                    <div className="p-6">
+                       <SpeakerTranscript
+                         segments={parseTranscriptToSegments(extensionMeeting.translatedTranscript)}
+                         isLive={false}
+                         meetingEnded={true}
+                       />
                     </div>
                   </div>
                 )}
@@ -1276,9 +1332,9 @@ export default function Page() {
             <TabsContent value="summary" className="mt-6">
               <div className="space-y-6">
                 {/* Summary */}
-                <div className="rounded-lg border p-6 bg-white shadow-sm">
+                <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-medium">Summary</h3>
+                    <h3 className="font-medium text-slate-800 dark:text-slate-200">Summary</h3>
                     {(!extensionMeeting.summary?.text || extensionMeeting.summary.text.includes('No summary available')) && (
                       <Button
                         onClick={() => handleGenerateSummary(extensionMeeting.id, extensionMeeting.transcript)}
@@ -1293,12 +1349,12 @@ export default function Page() {
                   {extensionMeeting.summary?.text ? (
                     <>
                       {/* Section Filter Buttons */}
-                      <div className="flex flex-wrap gap-2 mb-6 pb-4 border-b">
+                      <div className="flex flex-wrap gap-2 mb-6 pb-4 border-b dark:border-slate-800">
                         <button
                           onClick={() => setSummarySection('all')}
                           className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${summarySection === 'all'
                             ? 'bg-blue-600 text-white shadow-md'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            : 'bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-gray-200 dark:hover:bg-slate-700'
                             }`}
                         >
                           All Sections
@@ -1307,7 +1363,7 @@ export default function Page() {
                           onClick={() => setSummarySection('executive')}
                           className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${summarySection === 'executive'
                             ? 'bg-blue-600 text-white shadow-md'
-                            : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                            : 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50'
                             }`}
                         >
                           Executive Summary
@@ -1316,7 +1372,7 @@ export default function Page() {
                           onClick={() => setSummarySection('keypoints')}
                           className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${summarySection === 'keypoints'
                             ? 'bg-purple-600 text-white shadow-md'
-                            : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
+                            : 'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/50'
                             }`}
                         >
                           Key Points
@@ -1325,7 +1381,7 @@ export default function Page() {
                           onClick={() => setSummarySection('decisions')}
                           className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${summarySection === 'decisions'
                             ? 'bg-green-600 text-white shadow-md'
-                            : 'bg-green-50 text-green-700 hover:bg-green-100'
+                            : 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50'
                             }`}
                         >
                           Decisions
@@ -1334,7 +1390,7 @@ export default function Page() {
                           onClick={() => setSummarySection('actions')}
                           className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${summarySection === 'actions'
                             ? 'bg-blue-600 text-white shadow-md'
-                            : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                            : 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50'
                             }`}
                         >
                           Action Items
@@ -1343,7 +1399,7 @@ export default function Page() {
                           onClick={() => setSummarySection('nextsteps')}
                           className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${summarySection === 'nextsteps'
                             ? 'bg-indigo-600 text-white shadow-md'
-                            : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                            : 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50'
                             }`}
                         >
                           Next Steps
@@ -1352,19 +1408,19 @@ export default function Page() {
                           onClick={() => setSummarySection('important')}
                           className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${summarySection === 'important'
                             ? 'bg-amber-600 text-white shadow-md'
-                            : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                            : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50'
                             }`}
                         >
                           Important Info
                         </button>
                       </div>
 
-                      <div className="text-sm space-y-3">
+                      <div className="text-sm space-y-3 dark:text-slate-300">
                         {parseSummarySections(extensionMeeting.summary.text, summarySection)}
                       </div>
                     </>
                   ) : (
-                    <div className="text-sm text-center py-8 text-muted-foreground bg-gray-50 rounded-lg border border-dashed">
+                    <div className="text-sm text-center py-8 text-muted-foreground bg-gray-50 dark:bg-slate-800/50 rounded-lg border border-dashed dark:border-slate-700">
                       <p className="mb-4">No summary available yet.</p>
                       <Button
                         onClick={() => handleGenerateSummary(extensionMeeting.id, extensionMeeting.transcript)}
@@ -1378,9 +1434,9 @@ export default function Page() {
 
                 {/* Action Items - Only show when filter is 'actions' or 'all' */}
                 {(summarySection === 'actions' || summarySection === 'all') && (
-                  <div className="rounded-2xl border p-6 bg-white shadow-sm">
+                  <div className="rounded-2xl border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
                     <div className="mb-6">
-                      <h3 className="text-xs font-black uppercase tracking-widest text-blue-600">Action Items</h3>
+                      <h3 className="text-xs font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">Action Items</h3>
                     </div>
 
                     {extensionMeeting.actionItems && extensionMeeting.actionItems.length > 0 ? (
@@ -1391,26 +1447,26 @@ export default function Page() {
                           const cleanItem = cleanMarkdownText(itemText);
 
                           return (
-                            <div key={index} className="flex items-start gap-4 p-4 bg-slate-50/50 rounded-xl border border-slate-100 hover:border-blue-200 transition-colors group">
+                            <div key={index} className="flex items-start gap-4 p-4 bg-slate-50/50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-blue-200 dark:hover:border-blue-800/50 transition-colors group">
                               <div className="w-8 h-8 bg-blue-600 text-white rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0 shadow-sm group-hover:scale-105 transition-transform">
                                 {index + 1}
                               </div>
                               <div className="flex-1">
-                                <div className="text-sm font-semibold text-slate-800 leading-relaxed">
-                                  {renderTextWithMarkdown(cleanItem, 'text-blue-600', 'bg-blue-500')}
+                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 leading-relaxed">
+                                  {renderTextWithMarkdown(cleanItem, 'text-blue-600 dark:text-blue-400', 'bg-blue-500')}
                                 </div>
                                 <div className="flex flex-wrap gap-2 mt-3">
                                   {item.assignedTo && (
                                     <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${item.assignedTo.toLowerCase() === 'you'
-                                      ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
-                                      : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                      ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/50'
+                                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
                                       }`}>
                                       <User className="h-3 w-3" />
                                       <span>{item.assignedTo}</span>
                                     </div>
                                   )}
                                   {item.dueDate && (
-                                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200">
+                                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50">
                                       <Calendar className="h-3 w-3" />
                                       <span>
                                         {item.dueDate?.toDate
@@ -1426,7 +1482,7 @@ export default function Page() {
                         })}
                       </div>
                     ) : (
-                      <div className="text-sm text-slate-400 py-12 text-center border-2 border-dashed border-slate-100 rounded-2xl">
+                      <div className="text-sm text-slate-400 py-12 text-center border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl">
                         No action items found. Extraction will happen automatically.
                       </div>
                     )}
@@ -1435,70 +1491,10 @@ export default function Page() {
               </div>
             </TabsContent>
 
-            <TabsContent value="recording" className="mt-6">
-              <div className="space-y-6">
-                {/* Recording video on top */}
-                <div className="rounded-lg border p-4 bg-white shadow-sm">
-                  <h3 className="font-medium mb-3 flex items-center gap-2">
-                    <Video className="size-4" /> Meeting Recording
-                  </h3>
-                  {recordingLoading ? (
-                    <div className="flex items-center justify-center py-12 text-muted-foreground">Loading recording…</div>
-                  ) : displayRecordingUrl ? (
-                    <video
-                      src={displayRecordingUrl}
-                      controls
-                      className="w-full max-w-3xl rounded-lg border bg-black"
-                      playsInline
-                    >
-                      Your browser does not support the video tag.
-                    </video>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground border-2 border-dashed rounded-lg bg-slate-50/50">
-                      <Video className="h-12 w-12 mb-3 opacity-30" />
-                      <p className="font-medium text-slate-600">No recording for this meeting</p>
-                      <p className="text-sm mt-1 max-w-sm text-center">
-                        Next time, check &quot;Record meeting (tab + audio)&quot; in the extension when you start capture to save a video here.
-                      </p>
-                    </div>
-                  )}
-                </div>
-                {/* Transcript, Summary, Notes in one row when we have recording */}
-                {displayRecordingUrl && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="rounded-lg border p-4 bg-white shadow-sm">
-                      <h4 className="font-medium mb-2 text-sm text-blue-600">Transcript</h4>
-                      <div className="text-xs whitespace-pre-wrap max-h-48 overflow-y-auto border-l-2 border-gray-200 pl-3">
-                        {extensionMeeting.transcript ? extensionMeeting.transcript.slice(0, 800) + (extensionMeeting.transcript.length > 800 ? '…' : '') : 'No transcript.'}
-                      </div>
-                    </div>
-                    <div className="rounded-lg border p-4 bg-white shadow-sm">
-                      <h4 className="font-medium mb-2 text-sm text-purple-600">Summary</h4>
-                      <div className="text-xs max-h-48 overflow-y-auto line-clamp-6">
-                        {extensionMeeting.summary?.text ? extensionMeeting.summary.text.slice(0, 500) + (extensionMeeting.summary.text.length > 500 ? '…' : '') : 'No summary yet.'}
-                      </div>
-                    </div>
-                    <div className="rounded-lg border p-4 bg-white shadow-sm">
-                      <h4 className="font-medium mb-2 text-sm text-amber-600">Notes</h4>
-                      <div className="text-xs max-h-48 overflow-y-auto space-y-2">
-                        {extensionMeeting.notes && extensionMeeting.notes.length > 0
-                          ? extensionMeeting.notes.slice(0, 5).map((n: any, i: number) => (
-                            <div key={n.id || i} className="border-l-2 border-amber-200 pl-2">
-                              {n.text ? n.text.slice(0, 120) + (n.text.length > 120 ? '…' : '') : '—'}
-                            </div>
-                          ))
-                          : 'No notes yet.'}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </TabsContent>
-
             <TabsContent value="notes" className="mt-6">
-              <div className="rounded-lg border p-4">
+              <div className="rounded-lg border dark:border-slate-800 p-4 bg-white dark:bg-slate-900 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-medium">Notes with Screenshots</h3>
+                  <h3 className="font-medium text-slate-800 dark:text-slate-200">Notes with Screenshots</h3>
                   <Button
                     size="sm"
                     variant="outline"
@@ -1514,7 +1510,7 @@ export default function Page() {
                   <div className="space-y-8">
                     {organizeNotesByType(extensionMeeting.notes).map((section) => (
                       <div key={section.type} className="space-y-4">
-                        <h4 className={`font-semibold text-lg flex items-center gap-2 ${section.color} border-b pb-2`}>
+                        <h4 className={`font-semibold text-lg flex items-center gap-2 ${section.color} border-b dark:border-slate-800 pb-2`}>
                           {section.type === 'concept' && <span>💡</span>}
                           {section.type === 'definition' && <span>📖</span>}
                           {section.type === 'point' && <span>⭐</span>}
@@ -1523,14 +1519,14 @@ export default function Page() {
                           {section.type === 'screenshot' && <span>📷</span>}
                           {section.type === 'general' && <span>📝</span>}
                           {section.label}
-                          <span className="text-xs font-normal text-muted-foreground bg-gray-100 px-2 py-0.5 rounded-full">
+                          <span className="text-xs font-normal text-muted-foreground bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
                             {section.notes.length}
                           </span>
                         </h4>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {section.notes.map((note: any, index: number) => (
-                            <div key={note.id || index} className="border rounded-lg p-4 bg-white hover:shadow-md transition-shadow relative group">
+                            <div key={`${note.id || 'note'}-${index}`} className="border dark:border-slate-800 rounded-lg p-4 bg-white dark:bg-slate-900/50 hover:shadow-md dark:hover:border-slate-700 transition-shadow relative group">
                               {note.screenshotUrl && (
                                 <div className="mb-3 relative">
                                   <img
@@ -1582,7 +1578,7 @@ export default function Page() {
                                   <textarea
                                     value={editingNoteText}
                                     onChange={(e) => setEditingNoteText(e.target.value)}
-                                    className="w-full min-h-[100px] p-2 rounded border border-blue-300 focus:ring-1 focus:ring-blue-500 text-sm"
+                                    className="w-full min-h-[100px] p-2 rounded border border-blue-300 dark:border-blue-800/50 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-blue-500 text-sm"
                                     autoFocus
                                   />
                                   <div className="flex justify-end gap-2">
@@ -1595,7 +1591,7 @@ export default function Page() {
                                   </div>
                                 </div>
                               ) : (
-                                <div className={`text-sm whitespace-pre-wrap ${!note.screenshotUrl ? 'bg-gray-50 p-3 rounded border-l-4 ' + section.border : ''}`}>
+                                <div className={`text-sm whitespace-pre-wrap dark:text-slate-300 ${!note.screenshotUrl ? 'bg-gray-50 dark:bg-slate-800/30 p-3 rounded border-l-4 ' + section.border : ''}`}>
                                   {note.text ? renderTextWithMarkdown(note.text) : (note.screenshotUrl ? '' : 'Empty note')}
                                 </div>
                               )}
@@ -1606,9 +1602,9 @@ export default function Page() {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-12 bg-gray-50 rounded-lg border border-dashed">
-                    <FileText className="h-10 w-10 text-gray-400 mx-auto mb-3" />
-                    <p className="text-sm text-gray-600">No notes generated for this meeting yet.</p>
+                  <div className="text-center py-12 bg-gray-50 dark:bg-slate-800/50 rounded-lg border border-dashed dark:border-slate-800">
+                    <FileText className="h-10 w-10 text-gray-400 dark:text-slate-600 mx-auto mb-3" />
+                    <p className="text-sm text-gray-600 dark:text-slate-400">No notes generated for this meeting yet.</p>
                     <p className="text-xs text-gray-500 mt-1">Use the extension to capture notes and screenshots during the meeting.</p>
                   </div>
                 )}
@@ -1617,15 +1613,30 @@ export default function Page() {
           </Tabs>
 
           {extensionMeeting.meetingURL && (
-            <div className="text-sm text-muted-foreground mt-6 pt-4 border-t">
-              <a href={extensionMeeting.meetingURL} target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-600">
+            <div className="text-sm text-muted-foreground mt-6 pt-4 border-t dark:border-slate-800">
+              <a href={extensionMeeting.meetingURL} target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-600 dark:hover:text-blue-400">
                 View original meeting
               </a>
             </div>
           )}
         </div>
-      </AppShell>
-    )
+
+        {/* Ask Onix / Chat Panel */}
+        {isAskOnixOpen && (
+          <div className="w-[400px] xl:w-[450px] flex-shrink-0 sticky top-24 self-start h-[calc(100vh-14rem)] flex flex-col bg-white dark:bg-slate-950 border dark:border-slate-800 rounded-xl shadow-sm animate-in slide-in-from-right-5 duration-300 overflow-hidden mt-0">
+            <AskOnixPanel
+              onClose={() => setIsAskOnixOpen(false)}
+              meetingId={extensionMeeting.id}
+              meetingTitle={extensionMeeting.title || 'Meeting'}
+              transcript={parseTranscriptToSegments(extensionMeeting.transcript)}
+            />
+          </div>
+        )}
+      </div>
+
+      {!isAskOnixOpen && <FloatingAskOnixButton onClick={() => setIsAskOnixOpen(true)} />}
+    </AppShell>
+    );
   }
 
   // Show specific bot meeting if botId provided
@@ -1906,33 +1917,41 @@ export default function Page() {
 
                     {/* Speaker Breakdown */}
                     <div className="rounded-lg border dark:border-slate-800 p-6 bg-white dark:bg-slate-900 shadow-sm">
-                      <h3 className="font-medium mb-4 flex items-center gap-2">
+                       <h3 className="font-medium mb-4 flex items-center gap-2">
                         <Users className="size-4 text-indigo-500" /> Speaker Breakdown
                       </h3>
                       <div className="space-y-4">
-                        {botAnalytics?.speakerStats?.map((speaker: any, i: number) => (
-                          <div key={i} className="flex items-center gap-4">
-                            <div className="size-8 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center text-blue-700 font-bold text-xs uppercase shadow-sm border border-white dark:border-slate-800">
-                              {(speaker.speakerLabel || speaker.speaker || '?').substring(0, 1)}
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex justify-between mb-1.5">
-                                <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{speaker.speakerLabel || speaker.speaker || 'Unknown'}</span>
-                                <span className="text-xs text-muted-foreground font-mono">
-                                  {Math.floor(speaker.speakingTimeSeconds / 60)}m {Math.floor(speaker.speakingTimeSeconds % 60)}s
-                                </span>
+                        {botAnalytics?.speakerStats?.map((speaker: any, i: number) => {
+                          const speakerName = speaker.speakerLabel || speaker.speaker || 'Unknown';
+                          // Sync color index with transcript chronological order
+                          const transcriptSegments = liveSegments.length > 0 ? liveSegments : segments;
+                          const chronologicalSpeakers = Array.from(new Set(transcriptSegments.map((s: any) => s.speaker || 'Unknown Speaker')));
+                          const colors = getSpeakerColor(speakerName, chronologicalSpeakers);
+
+                          return (
+                            <div key={i} className="flex items-center gap-4">
+                              <div className={`size-8 rounded-full bg-gradient-to-br ${colors.gradient} flex items-center justify-center ${colors.text} font-bold text-xs uppercase shadow-sm border border-white dark:border-slate-800`}>
+                                {speakerName.substring(0, 1)}
                               </div>
-                              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-blue-500 rounded-full"
-                                  style={{
-                                    width: `${Math.min(100, (speaker.speakingTimeSeconds / (botAnalytics.meetingAnalytics?.totalDurationSeconds || 1)) * 100)}%`
-                                  }}
-                                />
+                              <div className="flex-1">
+                                <div className="flex justify-between mb-1.5">
+                                  <span className="text-sm font-medium text-slate-800 dark:text-slate-200">{speakerName}</span>
+                                  <span className="text-xs text-muted-foreground font-mono">
+                                    {Math.floor(speaker.speakingTimeSeconds / 60)}m {Math.floor(speaker.speakingTimeSeconds % 60)}s
+                                  </span>
+                                </div>
+                                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full ${colors.bar} rounded-full`}
+                                    style={{
+                                      width: `${Math.min(100, (speaker.speakingTimeSeconds / (botAnalytics.meetingAnalytics?.totalDurationSeconds || 1)) * 100)}%`
+                                    }}
+                                  />
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                         {(!botAnalytics?.speakerStats || botAnalytics.speakerStats.length === 0) && (
                           <div className="text-center py-8 text-muted-foreground text-sm border border-dashed rounded-lg">No speaker data available</div>
                         )}

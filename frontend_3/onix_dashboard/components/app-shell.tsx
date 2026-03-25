@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Menu, Search } from "lucide-react"
+import { DarkModeToggle } from "@/components/dark-mode-toggle"
 
 export function AppShell({
   title,
@@ -121,7 +122,10 @@ export function AppShell({
                   </div>
                 </form>
               )}
-              {actions ? <div className="flex items-center gap-2 shrink-0 ml-auto">{actions}</div> : null}
+              <div className="flex items-center gap-4 shrink-0 ml-auto">
+                <DarkModeToggle />
+                {actions}
+              </div>
             </header>
 
             <div className="px-6 pb-8 pt-5">{children}</div>

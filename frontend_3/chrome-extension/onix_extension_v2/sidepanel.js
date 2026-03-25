@@ -22,10 +22,29 @@ let guestTranscript = '' // Store transcript for guest users
 let guestMeetingTitle = '' // Store meeting title for guest users
 let bufferMeetingURL = null // Track which meeting URL the current buffer belongs to
 
-// Meeting recording (tab + audio) - runs alongside caption capture
-let recordingStream = null
-let recordingRecorder = null
-let recordingChunks = []
+// Theme Management
+async function loadTheme() {
+  try {
+    const res = await chrome.storage.local.get(['theme']);
+    if (res.theme === 'dark') {
+      document.body.classList.add('dark');
+    } else if (res.theme === 'light') {
+      document.body.classList.remove('dark');
+    } else {
+      // Default: check system preference
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.body.classList.add('dark');
+      }
+    }
+  } catch (error) {
+    console.error('Error loading theme:', error);
+  }
+}
+
+function toggleTheme() {
+  const isDark = document.body.classList.toggle('dark');
+  chrome.storage.local.set({ theme: isDark ? 'dark' : 'light' });
+}
 
 // Load persisted meeting document ID from storage (survives sidepanel reloads)
 async function loadCurrentMeetingDocId() {
@@ -177,7 +196,7 @@ function downloadTranscriptAsFile(transcript, meetingTitle) {
 async function downloadGuestMeetingRecord(transcript, meetingTitle) {
   const statusEl = document.getElementById('status')
   statusEl.textContent = 'Generating AI Summary...'
-  statusEl.style.color = '#666'
+  statusEl.className = 'muted'
 
   // Using a predefined valid UUID for guest mode to satisfy API requirements
   // This UUID is not used for storage lookup in guest mode
@@ -343,6 +362,11 @@ function initUI() {
   const profileAvatar = document.getElementById('profileAvatar')
   const profileName = document.getElementById('profileName')
   const guestSignInRow = document.getElementById('guestSignInRow')
+  const guestTopRow = document.getElementById('guestTopRow')
+  const themeToggles = document.querySelectorAll('.theme-toggle')
+  themeToggles.forEach(btn => {
+    btn.addEventListener('click', toggleTheme)
+  })
 
   // Live Q&A: Ask about this meeting (inside Ask Onix tab when signed in)
   const liveQaSection = document.getElementById('liveQaSection')
@@ -549,6 +573,7 @@ function initUI() {
 
   function updateAuthUI() {
     if (isGuestMode) {
+      if (guestTopRow) guestTopRow.style.display = 'flex'
       authEl.textContent = ''
       if (mainTabBar) mainTabBar.classList.remove('visible')
       showMainTab('live')
@@ -581,6 +606,7 @@ function initUI() {
       if (emailListRow) emailListRow.style.display = ''
       if (addImageRow) addImageRow.style.display = ''
       if (currentUser) {
+        if (guestTopRow) guestTopRow.style.display = 'none'
         authEl.textContent = ''
         if (guestSignInRow) guestSignInRow.style.display = 'none'
         if (signedInSection) {
@@ -611,6 +637,7 @@ function initUI() {
           downloadBtn.title = 'Download transcript to file'
         }
       } else {
+        if (guestTopRow) guestTopRow.style.display = 'flex'
         if (mainTabBar) mainTabBar.classList.remove('visible')
         showMainTab('live')
         authEl.textContent = 'Not signed in'
@@ -688,7 +715,7 @@ function initUI() {
       // Update status
       if (statusEl) {
         statusEl.textContent = '✓ Meeting ended - Transcript ready to save'
-        statusEl.style.color = 'green'
+        statusEl.className = 'status-connected'
       }
 
       // Auto-stop capture if still running
@@ -989,13 +1016,7 @@ function initUI() {
             statusEl.textContent = documentCreated ? 'Capturing and saving...' : 'Capturing (sign in to save)'
             console.log('✅ Caption capture started for tab', tabId)
 
-            // Optionally start meeting recording (tab + audio)
-            const recordCheckbox = document.getElementById('recordMeetingCheckbox')
-            if (recordCheckbox && recordCheckbox.checked) {
-              if (statusEl) statusEl.textContent = 'Choose "Chrome Tab" and select the meeting tab when prompted…'
-              startRecording(statusEl).catch(() => {})
-            }
-          })
+            })
         } catch (callbackError) {
           console.error('❌ Error in tab query callback:', callbackError)
           statusEl.textContent = `Error: ${callbackError.message}`
@@ -1105,11 +1126,6 @@ function initUI() {
       }
     }
 
-    // Stop recording and upload to dashboard (must run before clearing meeting doc ID)
-    stopRecordingAndUpload(statusEl).catch(err => {
-      console.error('Error stopping recording:', err)
-    })
-
     // Update UI immediately with proper visual feedback
     await saveCapturingState(false)
 
@@ -1200,7 +1216,7 @@ function initUI() {
       if (isGuestMode) {
         downloadTranscriptAsFile(transcriptText, title)
         statusEl.textContent = '✓ Transcript downloaded to your PC'
-        statusEl.style.color = 'green'
+        statusEl.className = 'status-connected'
         setTimeout(() => {
           if (statusEl.textContent === '✓ Transcript downloaded to your PC') {
             statusEl.textContent = ''
@@ -1222,7 +1238,7 @@ function initUI() {
       try {
         await saveTranscript(transcriptText, title, false)
         statusEl.textContent = '✓ Transcript saved to Firestore'
-        statusEl.style.color = 'green'
+        statusEl.className = 'status-connected'
 
         // Also download as backup
         downloadTranscript(transcriptText, title)
@@ -1277,7 +1293,7 @@ function initUI() {
         return
       }
       statusEl.textContent = 'Generating summary...'
-      statusEl.style.color = '#666'
+      statusEl.className = 'muted'
       downloadSummaryBtn.disabled = true
       const dashboardUrl = 'http://localhost:3000'
       try {
@@ -1300,7 +1316,7 @@ function initUI() {
         a.click()
         URL.revokeObjectURL(url)
         statusEl.textContent = '✓ Summary downloaded as PDF'
-        statusEl.style.color = 'green'
+        statusEl.className = 'status-connected'
       } catch (err) {
         statusEl.textContent = err && err.message ? err.message : 'Network error'
         statusEl.style.color = '#721c24'
@@ -1324,7 +1340,7 @@ function initUI() {
         const statusEl = document.getElementById('status')
         if (statusEl) {
           statusEl.textContent = 'Paste your screenshot image here (Ctrl+V / Cmd+V)'
-          statusEl.style.color = '#666'
+          statusEl.className = 'muted'
         }
       }
     })
@@ -1355,7 +1371,7 @@ function initUI() {
               const statusEl = document.getElementById('status')
               if (statusEl) {
                 statusEl.textContent = '✓ Image pasted! Add a caption and click Save.'
-                statusEl.style.color = 'green'
+                statusEl.className = 'status-connected'
               }
             }
             reader.readAsDataURL(blob)
@@ -1385,7 +1401,7 @@ function initUI() {
           )
 
           statusEl.textContent = '✓ Image and note saved'
-          statusEl.style.color = 'green'
+          statusEl.className = 'status-connected'
 
           if (saveStatusEl) {
             saveStatusEl.textContent = `📷 Note added to meeting`
@@ -1401,7 +1417,7 @@ function initUI() {
           await saveTextNoteToFirestore(noteText)
 
           statusEl.textContent = '✓ Note saved'
-          statusEl.style.color = 'green'
+          statusEl.className = 'status-connected'
 
           if (saveStatusEl) {
             saveStatusEl.textContent = `📝 Note added to meeting`
@@ -1484,8 +1500,12 @@ function initUI() {
             statusEl.textContent = 'Error refreshing participants'
           } else {
             statusEl.textContent = 'Participants refreshed'
+            statusEl.className = 'status-connected'
             setTimeout(() => {
-              statusEl.textContent = ''
+              if (statusEl.textContent === 'Participants refreshed') {
+                statusEl.textContent = ''
+                statusEl.className = 'muted'
+              }
             }, 2000)
           }
         })
@@ -1591,6 +1611,7 @@ function initUI() {
           if (downloadBtn) downloadBtn.disabled = false
           updateConnectionStatus('disconnected', 'Stopped')
           statusEl.textContent = 'Capture stopped'
+          statusEl.className = 'status-disconnected'
 
           // No automatic download - user must click Download button manually
         }
@@ -2448,95 +2469,6 @@ async function generateAutoNotes(transcriptText) {
   }
 }
 
-// Start tab + audio recording (getDisplayMedia). Call when user starts capture and "Record meeting" is checked.
-async function startRecording(statusEl) {
-  try {
-    const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { displaySurface: 'browser', width: 1280, height: 720 },
-      audio: true
-    })
-    recordingStream = stream
-    recordingChunks = []
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm'
-    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2500000, audioBitsPerSecond: 128000 })
-    recordingRecorder = recorder
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) recordingChunks.push(e.data)
-    }
-    recorder.onstop = () => {
-      stream.getTracks().forEach(t => t.stop())
-    }
-    recorder.start(5000)
-    if (statusEl) statusEl.textContent = (statusEl.textContent || '') + ' Recording...'
-    console.log('✅ Meeting recording started')
-  } catch (err) {
-    console.warn('Recording not started (user cancelled or error):', err.message)
-    if (statusEl && err.name !== 'NotAllowedError') statusEl.textContent = 'Recording unavailable: ' + (err.message || 'Unknown')
-  }
-}
-
-// Stop recording and upload to dashboard API; save recordingUrl to Firestore via API.
-async function stopRecordingAndUpload(statusEl) {
-  if (!recordingRecorder || recordingChunks.length === 0) {
-    recordingStream = null
-    recordingRecorder = null
-    recordingChunks = []
-    return
-  }
-  const recorder = recordingRecorder
-  const chunks = [...recordingChunks]
-  recordingRecorder = null
-  recordingChunks = []
-  recordingStream = null
-  recorder.stop()
-  await new Promise(r => setTimeout(r, 300))
-  const blob = new Blob(chunks, { type: 'video/webm' })
-  if (blob.size < 1000) {
-    console.warn('Recording too short, skipping upload')
-    return
-  }
-  if (!currentUser || !currentMeetingDocId) {
-    console.warn('No user or meeting doc ID, cannot upload recording')
-    if (statusEl) {
-      statusEl.textContent = 'Recording not uploaded: sign in and save transcript first, then stop.'
-      statusEl.style.color = 'orange'
-    }
-    return
-  }
-  const dashboardUrl = 'http://localhost:3000'
-  const token = await currentUser.getIdToken()
-  const form = new FormData()
-  form.append('meetingId', currentMeetingDocId)
-  form.append('recording', blob, 'recording.webm')
-  if (statusEl) statusEl.textContent = 'Uploading recording...'
-  try {
-    const res = await fetch(`${dashboardUrl}/api/extension-meetings/upload-recording`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: form
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.error || err.details || `Upload failed: ${res.status}`)
-    }
-    const data = await res.json()
-    if (statusEl) statusEl.textContent = (statusEl.textContent === 'Uploading recording...' ? '' : statusEl.textContent) + (statusEl.textContent ? ' ' : '') + '✓ Recording saved'
-    console.log('✅ Recording uploaded:', data.recordingUrl)
-  } catch (err) {
-    console.error('Recording upload failed:', err)
-    const msg = err.message || ''
-    if (statusEl) {
-      statusEl.textContent = 'Recording upload failed'
-      statusEl.style.color = 'red'
-      if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
-        statusEl.textContent = 'Upload failed: Start the dashboard at http://localhost:3000 and try again.'
-      } else if (msg) {
-        statusEl.textContent = 'Upload failed: ' + msg.substring(0, 80)
-      }
-    }
-  }
-}
-
 async function saveTranscript(text, title, isAutosave = false) {
   if (!currentUser) {
     console.error('❌ saveTranscript: No current user')
@@ -3169,11 +3101,11 @@ async function generateSummary() {
 
     console.log('✅ Summary generated:', result)
     statusEl.textContent = '✓ Summary generated successfully'
-    statusEl.style.color = 'green'
+    statusEl.className = 'status-success'
 
     if (saveStatusEl) {
       saveStatusEl.textContent = `🤖 Summary and action items updated`
-      saveStatusEl.style.color = '#6f42c1'
+      saveStatusEl.className = 'status-accent'
       setTimeout(() => {
         saveStatusEl.textContent = ''
       }, 5000)
@@ -3201,10 +3133,10 @@ async function generateSummary() {
       const errorMsg = error.message || 'Unknown error'
       if (errorMsg.includes('fetch') || errorMsg.includes('Failed to fetch')) {
         statusEl.textContent = '⚠️ Summary: Dashboard not running? Check console for details'
-        statusEl.style.color = 'orange'
+        statusEl.className = 'status-warning'
       } else {
         statusEl.textContent = `Summary error: ${errorMsg}`
-        statusEl.style.color = 'red'
+        statusEl.className = 'status-error'
       }
     }
   }
@@ -3223,7 +3155,7 @@ async function sendAutomatedEmails(meetingId, recipients) {
   try {
     if (statusEl) {
       statusEl.textContent = 'Sending automated emails...';
-      statusEl.style.color = '#007bff';
+      statusEl.className = 'status-info';
     }
 
     // Get Firebase auth token
@@ -3257,12 +3189,12 @@ async function sendAutomatedEmails(meetingId, recipients) {
 
     if (statusEl) {
       statusEl.textContent = '✓ Automated emails sent';
-      statusEl.style.color = 'green';
+      statusEl.className = 'status-success';
     }
 
     if (saveStatusEl) {
       saveStatusEl.textContent = `📧 Summary sent to ${recipients.split(',').length} recipient(s)`;
-      saveStatusEl.style.color = '#28a745';
+      saveStatusEl.className = 'status-success';
       setTimeout(() => {
         if (saveStatusEl.textContent.includes('Summary sent')) {
           saveStatusEl.textContent = '';
@@ -3273,7 +3205,7 @@ async function sendAutomatedEmails(meetingId, recipients) {
     console.error('❌ Error sending automated emails:', error);
     if (statusEl) {
       statusEl.textContent = `Email error: ${error.message}`;
-      statusEl.style.color = 'orange';
+      statusEl.className = 'status-warning';
     }
   }
 }
@@ -3282,6 +3214,9 @@ async function sendAutomatedEmails(meetingId, recipients) {
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('DOMContentLoaded event fired')
   try {
+    // Load theme
+    await loadTheme()
+
     // Load guest mode state first
     await loadGuestModeState()
 
@@ -3306,7 +3241,7 @@ if (document.readyState === 'loading') {
 } else {
   // DOM is already loaded
   console.log('DOM already loaded, initializing immediately')
-  Promise.all([loadGuestModeState(), loadCurrentMeetingDocId()]).then(() => {
+  Promise.all([loadTheme(), loadGuestModeState(), loadCurrentMeetingDocId()]).then(() => {
     if (currentMeetingDocId) {
       console.log('✅ Loaded meeting document ID:', currentMeetingDocId)
     }
