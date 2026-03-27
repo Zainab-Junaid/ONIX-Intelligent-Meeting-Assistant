@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from 'firebase-admin/auth';
 import admin from 'firebase-admin';
+import { getFirebaseAdmin } from '../../../../lib/firebase-admin';
 import { AssemblyAI } from 'assemblyai';
-import { getFirebaseAdmin } from '@/lib/firebase-admin';
 
 // Initialize Firebase Admin
 getFirebaseAdmin();
+
+
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,14 +18,14 @@ export async function POST(request: NextRequest) {
     }
 
     const token = authHeader.split('Bearer ')[1];
-
+    
     // Verify Firebase token
     const decodedToken = await getAuth().verifyIdToken(token);
     const userId = decodedToken.uid;
 
     // Get meeting ID, transcript, and optional context from request body
     const { meetingId, transcript, timestamp, previousNotes } = await request.json();
-
+    
     if (!meetingId || !transcript) {
       return NextResponse.json({ error: 'Meeting ID and transcript are required' }, { status: 400 });
     }
@@ -31,12 +33,12 @@ export async function POST(request: NextRequest) {
     // Check if AssemblyAI API key is configured
     if (!process.env.ASSEMBLYAI_API_KEY) {
       console.warn('⚠️ ASSEMBLYAI_API_KEY not found in environment variables');
-
+      
       // Return fallback notes - extract key points from transcript
       const fallbackNotes = generateFallbackNotes(transcript, timestamp);
-
-      return NextResponse.json({
-        success: true,
+      
+      return NextResponse.json({ 
+        success: true, 
         notes: fallbackNotes,
         isFallback: true
       });
@@ -80,7 +82,7 @@ Extract any questions raised, points that need clarification, areas of confusion
 **Output Format:**
 Organize your response with clear section headers. Under each section, list the relevant notes as bullet points. Each bullet point should be a complete, standalone note that makes sense on its own.
 
-${previousNotes ? `\n**Previous Notes Context:**\n${previousNotes.slice(-5).map((n, i) => `${i + 1}. [${n.type}] ${n.text}`).join('\n')}\n\nAvoid repeating information already covered in previous notes.` : ''}`;
+${previousNotes ? `\n**Previous Notes Context:**\n${previousNotes.slice(-5).map((n: any, i: number) => `${i + 1}. [${n.type}] ${n.text}`).join('\n')}\n\nAvoid repeating information already covered in previous notes.` : ''}`;
 
     let notesResp;
     try {
@@ -97,25 +99,25 @@ ${previousNotes ? `\n**Previous Notes Context:**\n${previousNotes.slice(-5).map(
       console.error('❌ AssemblyAI LeMUR API Error:', lemurError);
       console.error('Error message:', lemurError.message);
       console.error('Error status:', lemurError.status);
-
+      
       // Handle LeMUR access error
-      if (lemurError.message?.includes('LeMUR') ||
-        lemurError.message?.includes('access') ||
-        lemurError.message?.includes('upgrade') ||
-        lemurError.status === 403 ||
-        lemurError.status === 401) {
+      if (lemurError.message?.includes('LeMUR') || 
+          lemurError.message?.includes('access') ||
+          lemurError.message?.includes('upgrade') ||
+          lemurError.status === 403 ||
+          lemurError.status === 401) {
         console.warn('⚠️ LeMUR not available, using fallback notes generation');
         // Use fallback notes
         const fallbackNotes = generateFallbackNotes(transcript, timestamp);
-
-        return NextResponse.json({
-          success: false,
-          error: 'Your account does not have access to LeMUR. Please upgrade or contact support@assemblyai.com for more information.',
+        
+        return NextResponse.json({ 
+          success: true, 
+          error: 'Your account does not have access to LeMUR. Please upgrade or contact support@assemblyai.com for more information. Using fallback notes.',
           notes: fallbackNotes,
           isFallback: true
-        }, { status: 403 });
+        });
       }
-
+      
       // Re-throw other errors
       throw lemurError;
     }
@@ -131,41 +133,41 @@ ${previousNotes ? `\n**Previous Notes Context:**\n${previousNotes.slice(-5).map(
     const db = admin.firestore();
     const docRef = db.collection('users').doc(userId).collection('meetings').doc(meetingId);
     const docSnap = await docRef.get();
-
+    
     if (docSnap.exists) {
       const existingData = docSnap.data();
       const existingNotes = existingData?.notes || [];
       const updatedNotes = [...existingNotes, ...notes];
-
+      
       await docRef.update({
         notes: updatedNotes,
         updatedAt: admin.firestore.Timestamp.now()
       });
-
+      
       console.log(`✅ Saved ${notes.length} notes to Firestore (total: ${updatedNotes.length})`);
     } else {
       console.warn('⚠️ Meeting document not found, cannot save notes');
     }
 
-    return NextResponse.json({
-      success: true,
+    return NextResponse.json({ 
+      success: true, 
       notes: notes,
       isFallback: false
     });
 
   } catch (error: any) {
     console.error('❌ Error generating notes:', error);
-
+    
     // Return fallback notes on error
     const { transcript, timestamp } = await request.json().catch(() => ({ transcript: '', timestamp: null }));
     const fallbackNotes = generateFallbackNotes(transcript, timestamp);
-
-    return NextResponse.json({
-      success: false,
-      error: error.message || 'Failed to generate notes',
+    
+    return NextResponse.json({ 
+      success: true, 
+      error: error.message || 'Failed to generate notes. Using fallback notes.',
       notes: fallbackNotes,
       isFallback: true
-    }, { status: 500 });
+    });
   }
 }
 
@@ -188,7 +190,7 @@ function parseNotesFromText(notesText: string, timestamp: any): Array<{
   // Split by sections - look for markdown headers or bold text
   const sectionPattern = /(?:^|\n)(?:##?\s*)?(?:Key Concepts|Definitions|Important Points|Examples|Questions|Clarifications?)[:：]?\s*(?:\n|$)/i;
   const sections = notesText.split(sectionPattern);
-
+  
   // Also try splitting by common section markers
   let allSections: string[] = [];
   if (sections.length > 1) {
@@ -211,7 +213,7 @@ function parseNotesFromText(notesText: string, timestamp: any): Array<{
     // Determine type from section header or content
     const sectionText = section.toLowerCase();
     let type: 'concept' | 'definition' | 'point' | 'example' | 'question' | 'general' = 'general';
-
+    
     if (sectionText.includes('concept') || sectionText.includes('💡') || sectionText.includes('topic')) {
       type = 'concept';
     } else if (sectionText.includes('definition') || sectionText.includes('📖') || sectionText.includes('define')) {
@@ -230,14 +232,14 @@ function parseNotesFromText(notesText: string, timestamp: any): Array<{
       if (lineIndex === 0 && (line.match(/^#+\s*/) || line.toLowerCase().includes('concept') || line.toLowerCase().includes('definition'))) {
         return;
       }
-
+      
       // Remove bullet points, dashes, numbers, emojis
       const cleaned = line
         .replace(/^[•\-\*\d+\.\)]\s*/, '') // Remove bullets and numbers
         .replace(/^[💡📖⭐📚❓]\s*/, '') // Remove emojis
         .replace(/^##?\s*/, '') // Remove markdown headers
         .trim();
-
+      
       // Only add if it's substantial content (at least 15 characters)
       if (cleaned && cleaned.length > 15 && !cleaned.match(/^(Key|Definition|Example|Question|Important|Concept)/i)) {
         notes.push({
@@ -258,7 +260,7 @@ function parseNotesFromText(notesText: string, timestamp: any): Array<{
       const trimmed = line.trim();
       return trimmed.match(/^[•\-\*\d+\.\)]/) && trimmed.length > 15;
     });
-
+    
     if (bulletLines.length > 0) {
       bulletLines.forEach((line, index) => {
         const cleaned = line.replace(/^[•\-\*\d+\.\)]\s*/, '').trim();
@@ -300,21 +302,30 @@ function parseNotesFromText(notesText: string, timestamp: any): Array<{
 // Generate fallback notes when API is not available
 function generateFallbackNotes(transcript: string, timestamp: any): Array<{
   id: string;
-  timestamp: any;
+  timestamp: string;
   text: string;
   type: 'general';
-  createdAt: any;
+  createdAt: string;
 }> {
-  // Simple extraction: take first few sentences as key points
-  const sentences = transcript.split(/[.!?]+/).filter(s => s.trim().length > 20);
-  const keyPoints = sentences.slice(0, 5); // Take first 5 substantial sentences
+  // Simple extraction: split by newlines if no punctuation, or by punctuation.
+  let sentences = transcript.split(/\n+/).map(s => s.trim()).filter(s => s.length > 15);
+  if (sentences.length === 0) {
+    sentences = transcript.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 10);
+  }
+  
+  if (sentences.length === 0 && transcript.length > 0) {
+    sentences = [transcript.trim()];
+  }
+
+  // Take the most recent/substantial sentences
+  const keyPoints = sentences.slice(-5);
 
   return keyPoints.map((point, index) => ({
     id: `fallback_note_${Date.now()}_${index}`,
-    timestamp: timestamp || admin.firestore.Timestamp.now(),
+    timestamp: new Date().toISOString(),
     text: point.trim(),
     type: 'general' as const,
-    createdAt: admin.firestore.Timestamp.now()
+    createdAt: new Date().toISOString()
   }));
 }
 

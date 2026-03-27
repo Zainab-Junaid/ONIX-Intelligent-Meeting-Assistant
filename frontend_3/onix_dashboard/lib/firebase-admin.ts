@@ -12,36 +12,7 @@ function initFirebase() {
     return admin.app();
   }
 
-  // Parse env JSON string to object if present (cert() expects an object)
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  const serviceAccountFromEnv = raw ? (() => {
-    try {
-      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      return parsed && typeof parsed === 'object' && parsed.private_key ? parsed : null;
-    } catch (e: any) {
-      console.error('❌ FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON:', e.message);
-      return null;
-    }
-  })() : null;
-
-  // Optional: load from file path in env (e.g. FIREBASE_SERVICE_ACCOUNT_PATH=./backend/firebase-service-account.json)
-  const pathFromEnv = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
-  const serviceAccountFromPath = pathFromEnv ? (() => {
-    try {
-      const resolved = path.resolve(process.cwd(), pathFromEnv);
-      if (fs.existsSync(resolved)) {
-        console.log('   ✅ Found service account at FIREBASE_SERVICE_ACCOUNT_PATH:', resolved);
-        return JSON.parse(fs.readFileSync(resolved, 'utf8'));
-      }
-      console.warn('   FIREBASE_SERVICE_ACCOUNT_PATH set but file not found:', resolved);
-      return null;
-    } catch (e: any) {
-      console.error('❌ Error reading FIREBASE_SERVICE_ACCOUNT_PATH:', e.message);
-      return null;
-    }
-  })() : null;
-
-  const serviceAccount = serviceAccountFromEnv || serviceAccountFromPath || (() => {
+  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || (() => {
     try {
       console.log('🔍 Locating service account file...');
       

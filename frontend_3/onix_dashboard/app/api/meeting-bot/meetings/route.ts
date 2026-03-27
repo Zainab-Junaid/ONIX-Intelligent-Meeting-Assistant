@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     }
 
     const token = authHeader.split('Bearer ')[1];
-
+    
     // Verify Firebase token
     const decodedToken = await getAuth().verifyIdToken(token);
     const userId = decodedToken.uid;
@@ -61,14 +61,14 @@ export async function GET(request: NextRequest) {
     // Filter meetings by userId
     // Include meetings if:
     // 1. meeting.userId matches (from MongoDB transcript)
-    // 2. meeting.meetingId or meeting.postgresId is in userMeetingIds (from MeetingJob)
+    // 2. meeting.meetingId is in userMeetingIds (from MeetingJob)
     const filteredMeetings = allMeetings.filter((meeting: any) => {
       // Check if meeting has userId field from MongoDB that matches
       if (meeting.userId === userId) {
         return true;
       }
-      // Check if meetingId or postgresId is in user's MeetingJobs
-      if (userMeetingIds.length > 0 && (userMeetingIds.includes(meeting.meetingId) || userMeetingIds.includes(meeting.postgresId))) {
+      // Check if meetingId is in user's MeetingJobs
+      if (userMeetingIds.length > 0 && userMeetingIds.includes(meeting.meetingId)) {
         return true;
       }
       // Exclude meetings that don't match (more secure)

@@ -8,14 +8,6 @@ getFirebaseAdmin();
 
 export async function GET(request: NextRequest) {
   try {
-    const app = getFirebaseAdmin();
-    if (!app) {
-      return NextResponse.json(
-        { error: 'Extension meetings unavailable. Firebase Admin is not configured (missing FIREBASE_SERVICE_ACCOUNT_JSON or service account file).' },
-        { status: 503 }
-      );
-    }
-
     // Get Firebase token from headers
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {

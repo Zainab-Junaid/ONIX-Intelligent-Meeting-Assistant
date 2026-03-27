@@ -433,12 +433,12 @@ export default function Page() {
           {botLoading ? (
             <div className="text-sm text-muted-foreground animate-pulse">Loading bot meetings...</div>
           ) : processedBotMeetings.length === 0 ? (
-            <div className="text-center py-16 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-              <Bot className="size-12 text-slate-300 dark:text-slate-600 mx-auto mb-4" />
-              <p className="text-slate-500 dark:text-slate-400 text-base font-medium">
+            <div className="text-center py-16 rounded-3xl border border-dashed border-slate-200 bg-slate-50/50">
+              <Bot className="size-12 text-slate-300 mx-auto mb-4" />
+              <p className="text-slate-500 text-base font-medium">
                 {hasActiveFilters ? 'No meetings match your filters' : 'No bot meetings found'}
               </p>
-              <p className="text-slate-400 dark:text-slate-500 text-sm mt-1">
+              <p className="text-slate-400 text-sm mt-1">
                 {hasActiveFilters ? 'Try adjusting your search or filters' : 'Start a bot meeting to get started'}
               </p>
               {hasActiveFilters ? (
@@ -506,12 +506,12 @@ export default function Page() {
           {extensionLoading ? (
             <div className="text-sm text-muted-foreground animate-pulse">Loading extension meetings...</div>
           ) : processedExtensionMeetings.length === 0 ? (
-            <div className="text-center py-16 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-              <Chrome className="size-12 text-slate-300 dark:text-slate-600 mx-auto mb-4" />
-              <p className="text-slate-500 dark:text-slate-400 text-base font-medium">
+            <div className="text-center py-16 rounded-3xl border border-dashed border-slate-200 bg-slate-50/50">
+              <Chrome className="size-12 text-slate-300 mx-auto mb-4" />
+              <p className="text-slate-500 text-base font-medium">
                 {hasActiveFilters ? 'No meetings match your filters' : 'No extension meetings found'}
               </p>
-              <p className="text-slate-400 dark:text-slate-500 text-sm mt-1">
+              <p className="text-slate-400 text-sm mt-1">
                 {hasActiveFilters ? 'Try adjusting your search or filters' : 'Use the Chrome extension to record meetings'}
               </p>
               {hasActiveFilters ? (
