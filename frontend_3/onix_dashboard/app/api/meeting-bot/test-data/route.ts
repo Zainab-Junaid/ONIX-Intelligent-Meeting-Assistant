@@ -2,13 +2,43 @@
 // This allows testing the dashboard integration without running the actual bot
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirebaseAdmin } from '@/lib/firebase-admin';
+import admin from 'firebase-admin';
+import { getFirebaseAdmin } from '../../../../lib/firebase-admin';
 
 // Initialize Firebase Admin
 getFirebaseAdmin();
+// MongoDB is optional - will skip if not available
+let mongoose: any;
+try {
+  const mongooseLib = 'mongoose';
+  mongoose = require(mongooseLib);
+} catch {
+  // mongoose not installed, MongoDB features will be skipped
+  mongoose = null;
+}
+
+
 
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/meeting-transcripts';
+
+// MongoDB Schema (matching bot structure)
+const SegmentSchema = new mongoose.Schema({
+  segmentId: { type: String, required: true },
+  start: { type: Number, required: true },
+  end: { type: Number, required: true },
+  text: { type: String, required: true },
+  speaker: { type: String, required: true },
+}, { _id: false });
+
+const MeetingTranscriptSchema = new mongoose.Schema({
+  meetingId: { type: String, required: true, unique: true, index: true },
+  userId: { type: String, index: true },
+  meetingTitle: { type: String },
+  segments: { type: [SegmentSchema], default: [] },
+  createdAt: { type: Date, required: true, default: Date.now },
+  updatedAt: { type: Date, required: true, default: Date.now },
+});
 
 // POST endpoint to create test data
 export async function POST(request: NextRequest) {
@@ -20,7 +50,7 @@ export async function POST(request: NextRequest) {
     }
 
     const token = authHeader.split('Bearer ')[1];
-
+    
     // Verify Firebase token
     const decodedToken = await getAuth().verifyIdToken(token);
     const userId = decodedToken.uid;
@@ -38,39 +68,14 @@ export async function POST(request: NextRequest) {
     // Connect to MongoDB (optional)
     let mongoConnected = false;
     let MeetingTranscriptModel: any = null;
-    let mongoose: any = null;
-
-    try {
-      mongoose = require('mongoose');
-    } catch {
-      console.warn('Mongoose not installed, skipping MongoDB connection');
-    }
-
+    
     if (mongoose) {
-      // MongoDB Schema (matching bot structure)
-      const SegmentSchema = new mongoose.Schema({
-        segmentId: { type: String, required: true },
-        start: { type: Number, required: true },
-        end: { type: Number, required: true },
-        text: { type: String, required: true },
-        speaker: { type: String, required: true },
-      }, { _id: false });
-
-      const MeetingTranscriptSchema = new mongoose.Schema({
-        meetingId: { type: String, required: true, unique: true, index: true },
-        userId: { type: String, index: true },
-        meetingTitle: { type: String },
-        segments: { type: [SegmentSchema], default: [] },
-        createdAt: { type: Date, required: true, default: Date.now },
-        updatedAt: { type: Date, required: true, default: Date.now },
-      });
-
       try {
         if (mongoose.connection.readyState === 0) {
           await mongoose.connect(MONGODB_URI);
           mongoConnected = true;
         }
-        MeetingTranscriptModel = mongoose.models.MeetingTranscript ||
+        MeetingTranscriptModel = mongoose.models.MeetingTranscript || 
           mongoose.model('MeetingTranscript', MeetingTranscriptSchema);
       } catch (mongoError: any) {
         console.warn('MongoDB connection failed, will skip MongoDB test data:', mongoError.message);
@@ -232,9 +237,9 @@ This was a test meeting to discuss project timelines and next steps.
 
   } catch (error: any) {
     console.error('Error creating test data:', error);
-    return NextResponse.json({
-      error: 'Failed to create test data',
-      details: error?.message
+    return NextResponse.json({ 
+      error: 'Failed to create test data', 
+      details: error?.message 
     }, { status: 500 });
   }
 }
@@ -249,7 +254,7 @@ export async function GET(request: NextRequest) {
     }
 
     const token = authHeader.split('Bearer ')[1];
-
+    
     // Verify Firebase token
     const decodedToken = await getAuth().verifyIdToken(token);
     const userId = decodedToken.uid;
@@ -284,9 +289,9 @@ export async function GET(request: NextRequest) {
 
   } catch (error: any) {
     console.error('Error checking test data:', error);
-    return NextResponse.json({
-      error: 'Failed to check test data',
-      details: error?.message
+    return NextResponse.json({ 
+      error: 'Failed to check test data', 
+      details: error?.message 
     }, { status: 500 });
   }
 }

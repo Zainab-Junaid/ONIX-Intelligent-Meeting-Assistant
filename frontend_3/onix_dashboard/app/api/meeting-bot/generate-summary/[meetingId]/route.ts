@@ -2,10 +2,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from 'firebase-admin/auth';
 import admin from 'firebase-admin';
-import { getFirebaseAdmin } from '@/lib/firebase-admin';
+import { getFirebaseAdmin } from '../../../../../lib/firebase-admin';
 
 // Initialize Firebase Admin
 getFirebaseAdmin();
+
+
 
 export async function POST(
   request: NextRequest,
@@ -19,7 +21,7 @@ export async function POST(
     }
 
     const token = authHeader.split('Bearer ')[1];
-
+    
     // Verify Firebase token
     const decodedToken = await getAuth().verifyIdToken(token);
     const userId = decodedToken.uid;
@@ -55,12 +57,12 @@ export async function POST(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
-
+    
     if (!botResponse.ok) {
       const errorText = await botResponse.text();
-      return NextResponse.json({
-        error: 'Failed to generate summary',
-        details: errorText
+      return NextResponse.json({ 
+        error: 'Failed to generate summary', 
+        details: errorText 
       }, { status: botResponse.status });
     }
 
@@ -69,9 +71,9 @@ export async function POST(
 
   } catch (error: any) {
     console.error('Error generating bot meeting summary:', error);
-    return NextResponse.json({
-      error: 'Failed to generate summary',
-      details: error?.message
+    return NextResponse.json({ 
+      error: 'Failed to generate summary', 
+      details: error?.message 
     }, { status: 500 });
   }
 }

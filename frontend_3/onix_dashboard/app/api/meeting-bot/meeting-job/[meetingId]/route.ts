@@ -2,10 +2,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from 'firebase-admin/auth';
 import admin from 'firebase-admin';
-import { getFirebaseAdmin } from '@/lib/firebase-admin';
+import { getFirebaseAdmin } from '../../../../../lib/firebase-admin';
 
 // Initialize Firebase Admin
 getFirebaseAdmin();
+
+
 
 export async function GET(
   request: NextRequest,
@@ -19,7 +21,7 @@ export async function GET(
     }
 
     const token = authHeader.split('Bearer ')[1];
-
+    
     // Verify Firebase token
     const decodedToken = await getAuth().verifyIdToken(token);
     const userId = decodedToken.uid;
@@ -31,12 +33,12 @@ export async function GET(
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });
-
+    
     if (!botResponse.ok) {
       const errorText = await botResponse.text();
-      return NextResponse.json({
-        error: 'Failed to fetch meeting job',
-        details: errorText
+      return NextResponse.json({ 
+        error: 'Failed to fetch meeting job', 
+        details: errorText 
       }, { status: botResponse.status });
     }
 
@@ -51,9 +53,9 @@ export async function GET(
 
   } catch (error: any) {
     console.error('Error fetching meeting job:', error);
-    return NextResponse.json({
-      error: 'Failed to fetch meeting job',
-      details: error?.message
+    return NextResponse.json({ 
+      error: 'Failed to fetch meeting job', 
+      details: error?.message 
     }, { status: 500 });
   }
 }

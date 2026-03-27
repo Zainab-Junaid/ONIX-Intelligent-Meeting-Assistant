@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from 'firebase-admin/auth';
 import admin from 'firebase-admin';
-import { getFirebaseAdmin } from '@/lib/firebase-admin';
-
-const RECORDING_MAX_SIZE = 500 * 1024 * 1024; // 500 MB
-const SIGNED_URL_EXPIRY_DAYS = 7;
+import { getFirebaseAdmin } from '../../../../lib/firebase-admin';
 
 // Initialize Firebase Admin
 getFirebaseAdmin();
 
+const RECORDING_MAX_SIZE = 500 * 1024 * 1024; // 500 MB
+const SIGNED_URL_EXPIRY_DAYS = 7;
+
+function getAdminApp() {
+  );
+  }
+  return admin.app();
+}
+
 export async function POST(request: NextRequest) {
   try {
+    getAdminApp();
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'No token provided' }, { status: 401 });

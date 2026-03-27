@@ -7,7 +7,6 @@ import { Sidebar } from "@/components/sidebar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Menu, Search } from "lucide-react"
-import { DarkModeToggle } from "@/components/dark-mode-toggle"
 
 export function AppShell({
   title,
@@ -87,15 +86,10 @@ export function AppShell({
                   variant="ghost"
                   size="icon"
                   onClick={() => {
-                    if (!isSidebarOpen) {
-                      // Sidebar is closed: always open it
-                      setIsSidebarOpen(true)
-                    } else if (typeof window !== "undefined" && window.innerWidth >= 768) {
-                      // Sidebar is open on desktop: toggle collapse
+                    if (typeof window !== "undefined" && window.innerWidth >= 768) {
                       setIsCollapsed(!isCollapsed)
                     } else {
-                      // Sidebar is open on mobile: close it
-                      setIsSidebarOpen(false)
+                      setIsSidebarOpen(!isSidebarOpen)
                     }
                   }}
                   aria-label="Toggle menu"
@@ -122,10 +116,7 @@ export function AppShell({
                   </div>
                 </form>
               )}
-              <div className="flex items-center gap-4 shrink-0 ml-auto">
-                <DarkModeToggle />
-                {actions}
-              </div>
+              {actions ? <div className="flex items-center gap-2 shrink-0 ml-auto">{actions}</div> : null}
             </header>
 
             <div className="px-6 pb-8 pt-5">{children}</div>
