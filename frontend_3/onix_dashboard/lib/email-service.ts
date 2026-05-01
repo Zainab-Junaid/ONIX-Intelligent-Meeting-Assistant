@@ -144,31 +144,17 @@ export function generateSummaryEmailHTML(
 
   const actionItemsHTML = actionItems && actionItems.length > 0
     ? `
-      <div style="margin-top: 32px; padding: 24px; background-color: #fffaf0; border: 1px solid #feebc8; border-radius: 12px; border-left: 6px solid #ed8936;">
-        <h3 style="color: #c05621; font-size: 20px; margin: 0 0 16px 0; display: flex; align-items: center;">
-          <span style="margin-right: 8px;">📋</span> Action Items
-        </h3>
-        <ul style="list-style-type: none; padding: 0; margin: 0; color: #2d3748;">
+      <div style="margin-top: 32px;">
+        <div style="display: flex; align-items: center; margin-bottom: 16px;">
+          <div style="width: 4px; height: 24px; background-color: #ed8936; border-radius: 2px; margin-right: 12px;"></div>
+          <h3 style="color: #1a202c; font-size: 22px; font-weight: 700; margin: 0;">Action Items</h3>
+        </div>
+        <ul style="padding-left: 24px; margin: 0; color: #4a5568; line-height: 1.8; font-size: 16px; list-style-type: disc;">
           ${actionItems.map(item => {
             const text = typeof item === 'string' ? item : (item.text || item.item || '');
-            const assignedTo = item.assignedTo ? `<span style="background-color: #fbd38d; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 8px; font-weight: bold; color: #744210;">@${item.assignedTo}</span>` : '';
-            const dueDate = item.dueDate ? `<span style="font-size: 12px; color: #718096; margin-left: 8px;">📅 ${typeof item.dueDate === 'string' ? item.dueDate : 'Soon'}</span>` : '';
-            return `<li style="margin-bottom: 12px; padding: 12px; background: white; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); border: 1px solid #fef3c7;">
-                      <div style="font-weight: 500;">${text}</div>
-                      <div style="margin-top: 4px;">${assignedTo}${dueDate}</div>
-                    </li>`;
+            return `<li style="margin-bottom: 8px;">${text}</li>`;
           }).join('')}
         </ul>
-      </div>
-    `
-    : '';
-
-  const meetingLinkHTML = meetingUrl
-    ? `
-      <div style="text-align: center; margin-top: 40px;">
-        <a href="${meetingUrl}" style="background-color: #4c51bf; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: inline-block;">
-          View Full Details in Dashboard
-        </a>
       </div>
     `
     : '';
@@ -193,7 +179,7 @@ export function generateSummaryEmailHTML(
           </div>
         </div>
         
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 32px; border-radius: 12px; color: white; margin-bottom: 40px;">
+        <div style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); padding: 32px; border-radius: 12px; color: white; margin-bottom: 40px;">
           <h2 style="font-size: 24px; font-weight: 700; margin: 0;">${meetingTitle}</h2>
           <p style="opacity: 0.9; margin: 8px 0 0 0; font-size: 16px;">Complete summary and action items from your meeting.</p>
         </div>
@@ -211,15 +197,7 @@ export function generateSummaryEmailHTML(
         ${actionItemsHTML}
         
         <div style="margin-top: 40px; padding: 24px; background-color: #ebf8ff; border-radius: 12px; border: 1px solid #bee3f8; text-align: center;">
-          <p style="margin: 0; color: #2c5282; font-weight: 500;">📎 Detailed meeting insights are attached as a PDF</p>
-          <p style="margin: 8px 0 0 0; color: #4299e1; font-size: 14px;">Includes Summary and formatted Action Items table.</p>
-        </div>
-
-        ${meetingLinkHTML}
-
-        <div style="margin-top: 48px; padding-top: 24px; border-top: 1px solid #edf2f7; color: #a0aec0; font-size: 12px; text-align: center;">
-          <p style="margin: 0;">This report was automatically synthesized by <strong>ONIX AI Assistant</strong></p>
-          <p style="margin: 4px 0 0 0;">Focused on making your meetings more productive.</p>
+          <p style="margin: 0; color: #2c5282; font-weight: 500;">📎 Meeting insights are attached as a PDF</p>
         </div>
       </div>
     </body>

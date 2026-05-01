@@ -40,9 +40,14 @@ import { getVideoLaunchArgs } from "../config/videoConfig";
 const LEAVE_BANNER_SEL =
   'body > div[role="heading"]:has-text("You left the meeting"),' +
   'body > div[role="heading"]:has-text("You’ve left the call"),' +
+  'body > div[role="heading"]:has-text("You’ve left the meeting"),' +
   'body:has(div:has-text("You were removed")),' +
   'body:has(div:has-text("You’ve been removed")),' +
-  'body:has(div:has-text("removed from the meeting"))';
+  'body:has(div:has-text("removed from the meeting")),' +
+  'body:has(div:has-text("The host ended this call for everyone")),' +
+  'body:has(div:has-text("The meeting has ended")),' +
+  'body:has(div:has-text("This call has ended")),' +
+  'body:has(div:has-text("Host has ended the meeting"))';
 
 // launches broswer, joins Google Meet, records captions
 export async function runBot(url: string): Promise<string> {

@@ -13,6 +13,11 @@ function cleanMarkdownText(text: string): string {
     .replace(/_/g, '')
     .replace(/`/g, '')
     .replace(/\u2022/g, '-') // Unicode bullet -> ASCII hyphen
+    .replace(/[\u2018\u2019]/g, "'") // smart single quotes
+    .replace(/[\u201C\u201D]/g, '"') // smart double quotes
+    .replace(/[\u2013\u2014]/g, '-') // en and em dashes
+    .replace(/[\u2026]/g, '...')     // ellipsis
+    .replace(/[^\x00-\xFF]/g, '')    // strip all remaining non-Latin1 characters (like emojis)
     .trim();
 }
 
@@ -41,41 +46,40 @@ export async function generateMeetingPDF(data: PDFData): Promise<string> {
   const pageWidth = doc.internal.pageSize.getWidth();
   
   // Header
-  // Using a professional blue color #4c51bf (consistent with frontend_2)
-  doc.setFillColor(76, 81, 191); 
-  doc.rect(0, 0, pageWidth, 40, 'F');
+  // Using the dashboard's primary blue color (bg-blue-600 => #2563eb)
+  doc.setFillColor(37, 99, 235); 
+  doc.rect(0, 0, pageWidth, 30, 'F');
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(24);
-  doc.text('Meeting Insights', 20, 20);
-  doc.setFontSize(10);
-  doc.text(`Meeting Id: ${meetingId}`, 20, 30);
-  doc.text(`Generated on ${new Date().toLocaleDateString()}`, pageWidth - 20, 30, { align: 'right' });
-
-  let yPos = 55;
-
-  // Meeting Title
-  doc.setTextColor(26, 32, 44);
-  doc.setFontSize(20);
-  doc.text(meetingTitle, 20, yPos);
-  yPos += 10;
   
-  // Meeting Date
+  // Meeting Title in Header (Left Aligned)
+  doc.setFontSize(18);
+  const cleanTitle = cleanMarkdownText(meetingTitle);
+  const displayTitle = cleanTitle.length > 55 ? cleanTitle.substring(0, 55) + '...' : cleanTitle;
+  doc.text(displayTitle, 20, 20);
+  
+  // Date in Header (Right Aligned)
   doc.setFontSize(10);
-  doc.setTextColor(113, 128, 150);
-  doc.text(`Meeting Date: ${dateStr}`, 20, yPos);
-  yPos += 15;
+  doc.text(cleanMarkdownText(dateStr), pageWidth - 20, 20, { align: 'right' });
 
-  // Summary Section
+  let yPos = 45;
+
+  // Meeting Insights Section Header
   doc.setTextColor(26, 32, 44);
-  doc.setFontSize(16);
-  doc.text('Summary', 20, yPos);
-  yPos += 8;
+  doc.setFontSize(18);
+  doc.setFont(undefined as any, 'bold');
+  doc.text('Meeting Insights', pageWidth / 2, yPos, { align: 'center' });
+  doc.setFont(undefined as any, 'normal');
+  yPos += 10;
   
   // Parse summary with marked lexer
   const tokens = marked.lexer(summaryText);
   
   doc.setTextColor(45, 55, 72);
   
+  let seenKeyTopics = false;
+  let seenListAfterKeyTopics = false;
+  let summaryHeadingAdded = false;
+
   tokens.forEach(token => {
       // Check for page break
       if (yPos > 270) {
@@ -86,22 +90,47 @@ export async function generateMeetingPDF(data: PDFData): Promise<string> {
       const anyToken = token as any; // marked types are sometimes strict
 
       if (token.type === 'heading') {
+          const headingText = cleanMarkdownText(anyToken.text ?? anyToken.raw ?? '');
+          
+          if (headingText.toLowerCase().includes('key topic')) {
+              seenKeyTopics = true;
+          }
+
+          // Skip drawing "Meeting Analysis" or "Summary" if the LLM generated them
+          if (headingText.toLowerCase() === 'meeting analysis' || headingText.toLowerCase() === 'summary') {
+              return;
+          }
+          
           doc.setFontSize(14 - (token.depth)); // H1=13, H2=12, etc
           doc.setFont(undefined as any, 'bold');
           yPos += 5;
-          const headingText = cleanMarkdownText(anyToken.text ?? anyToken.raw ?? '');
           if (headingText) {
             doc.text(headingText, 20, yPos);
             yPos += 8;
           }
           doc.setFont(undefined as any, 'normal');
       } else if (token.type === 'paragraph') {
+          if (seenListAfterKeyTopics && !summaryHeadingAdded) {
+             doc.setFontSize(14);
+             doc.setFont(undefined as any, 'bold');
+             yPos += 5;
+             doc.text('Summary', 20, yPos);
+             yPos += 8;
+             doc.setFont(undefined as any, 'normal');
+             summaryHeadingAdded = true;
+             doc.setTextColor(45, 55, 72); // Reset text color to default
+          }
+
           doc.setFontSize(11);
           const cleanText = cleanMarkdownText(anyToken.text || '');
           const splitText = doc.splitTextToSize(cleanText, pageWidth - 40);
           doc.text(splitText, 20, yPos);
           yPos += (splitText.length * 6) + 4;
       } else if (token.type === 'list') {
+          if (seenKeyTopics) {
+              seenListAfterKeyTopics = true;
+          }
+          
           doc.setFontSize(11);
           token.items.forEach((item: any) => {
               if (yPos > 270) {
@@ -142,23 +171,30 @@ export async function generateMeetingPDF(data: PDFData): Promise<string> {
       yPos = 20;
     }
     
+    // Header for Action Items
+    doc.setFontSize(14);
+    doc.setFont(undefined as any, 'bold');
     doc.setTextColor(26, 32, 44);
-    doc.setFontSize(16);
     doc.text('Action Items', 20, yPos);
-    yPos += 5;
+    yPos += 8;
+    
+    doc.setFont(undefined as any, 'normal');
+    doc.setTextColor(45, 55, 72);
+    doc.setFontSize(11);
 
-    autoTable(doc, {
-      startY: yPos,
-      head: [['Task', 'Assigned To', 'Due Date']],
-      body: actionItems.map(item => [
-        item.item, 
-        item.assignedTo || '-', 
-        item.dueDate || '-'
-      ]),
-      theme: 'striped',
-      headStyles: { fillColor: [76, 81, 191] },
-      margin: { left: 20, right: 20 }
+    actionItems.forEach(item => {
+        if (yPos > 270) {
+            doc.addPage();
+            yPos = 20;
+        }
+        const anyItem = item as any;
+        const text = typeof anyItem === 'string' ? anyItem : (anyItem.text || anyItem.item || '');
+        const cleanText = cleanMarkdownText(text);
+        const splitText = doc.splitTextToSize('- ' + cleanText, pageWidth - 45);
+        doc.text(splitText, 25, yPos); // Indent list items
+        yPos += (splitText.length * 6) + 2;
     });
+    yPos += 4;
   }
 
   // Footer on all pages

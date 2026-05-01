@@ -160,45 +160,97 @@ Meeting with ${participants.join(', ')} — ${transcript.segments.length} segmen
   }
 
   try {
-    console.log(`🚀 Calling AssemblyAI LeMUR API...`);
+    console.log(`🚀 Calling AssemblyAI LLM Gateway...`);
 
-    const client = getAssemblyAIClient();
+    const makeGatewayCall = async (promptName: string, promptText: string, context: string, maxTokens: number) => {
+      console.log(`📋 LLM Gateway Call: ${promptName}...`);
+      let attempt = 0;
+      let lastError;
+      
+      while (attempt < 4) {
+        try {
+          const response = await fetch("https://llm-gateway.assemblyai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${process.env.ASSEMBLYAI_API_KEY}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: "claude-sonnet-4-20250514",
+              messages: [
+                { 
+                  role: "system", 
+                  content: `${context}\n\nYou are processing a meeting transcript. The transcript is provided in the user message.` 
+                },
+                { 
+                  role: "user", 
+                  content: `Here is the transcript:\n\n${combinedSegments}\n\nTask:\n${promptText}` 
+                }
+              ],
+              max_tokens: maxTokens,
+            })
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`LLM Gateway Error (${response.status}): ${errorText}`);
+          }
+
+          const data = await response.json();
+          return data.choices[0].message.content;
+        } catch (e: any) {
+          lastError = e;
+          // Check if it's a network error (like EAI_AGAIN or ECONNRESET) or a rate limit (429)
+          const isRetryable = e.message.includes('EAI_AGAIN') || 
+                              e.message.includes('ECONN') || 
+                              e.message.includes('fetch failed') || 
+                              e.message.includes('429') || 
+                              e.message.includes('500') ||
+                              e.message.includes('502') ||
+                              e.message.includes('503') ||
+                              e.message.includes('504') ||
+                              e.message.includes('timeout');
+                              
+          if (!isRetryable) {
+            throw e; // Unrecoverable error (e.g. 400 Bad Request, 401 Unauthorized)
+          }
+          
+          attempt++;
+          if (attempt >= 4) break;
+          
+          const delayMs = 2000 * Math.pow(2, attempt - 1); // Exponential backoff: 2s, 4s, 8s
+          console.warn(`⚠️ Retry ${attempt}/3 for ${promptName} in ${delayMs}ms due to: ${e.message}`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+      throw lastError;
+    };
 
     // --- CALL 1: Generate structured summary ---
-    console.log(`📋 LeMUR Call 1: Generating structured summary...`);
-    const summaryResp = await client.lemur.task({
-      input_text: combinedSegments,
-      final_model: "anthropic/claude-3-7-sonnet-20250219",
-      prompt: SUMMARY_PROMPT,
-      context: `Meeting title: ${transcript.meetingTitle || 'Unknown'}. This is a transcript from a meeting with speaker labels in [Speaker]: format.`,
-      max_output_size: 4000,
-    });
+    const summaryText = await makeGatewayCall(
+      "Generating structured summary",
+      SUMMARY_PROMPT,
+      `Meeting title: ${transcript.meetingTitle || 'Unknown'}. This is a transcript from a meeting with speaker labels in [Speaker]: format.`,
+      4000
+    );
 
     // --- CALL 2: Extract key topics & keywords ---
-    console.log(`🏷️ LeMUR Call 2: Extracting key topics & keywords...`);
-    const keyTopicsResp = await client.lemur.task({
-      input_text: combinedSegments,
-      final_model: "anthropic/claude-3-7-sonnet-20250219",
-      prompt: KEY_TOPICS_PROMPT,
-      context: `Meeting title: ${transcript.meetingTitle || 'Unknown'}.`,
-      max_output_size: 2000,
-    });
+    const keyTopicsText = await makeGatewayCall(
+      "Extracting key topics & keywords",
+      KEY_TOPICS_PROMPT,
+      `Meeting title: ${transcript.meetingTitle || 'Unknown'}.`,
+      2000
+    );
 
     // --- CALL 3: Extract action items ---
-    console.log(`✅ LeMUR Call 3: Extracting action items...`);
-    const actionItemsResp = await client.lemur.task({
-      input_text: combinedSegments,
-      final_model: "anthropic/claude-3-7-sonnet-20250219",
-      prompt: ACTION_ITEMS_PROMPT,
-      context: `Meeting title: ${transcript.meetingTitle || 'Unknown'}.`,
-      max_output_size: 2000,
-    });
+    const actionItemsText = await makeGatewayCall(
+      "Extracting action items",
+      ACTION_ITEMS_PROMPT,
+      `Meeting title: ${transcript.meetingTitle || 'Unknown'}.`,
+      2000
+    );
 
-    console.log(`✅ All 3 LeMUR calls completed successfully`);
-
-    const summaryText = summaryResp.response;
-    const keyTopicsText = keyTopicsResp.response;
-    const actionItemsText = actionItemsResp.response;
+    console.log(`✅ All 3 LLM Gateway calls completed successfully`);
 
     console.log(`📋 Summary length: ${summaryText.length} characters`);
     console.log(`📝 Summary preview:\n${summaryText.substring(0, 400)}...`);
@@ -259,7 +311,7 @@ Meeting with ${participants.join(', ')} — ${transcript.segments.length} segmen
         meetingTitle: transcript.meetingTitle,
         generatedAt: new Date(),
         summaryText: summaryText,
-        model: "assemblyai-lemur",
+        model: "assemblyai-llm-gateway",
         isFallback: false,
       },
       actionItems: actionItems,

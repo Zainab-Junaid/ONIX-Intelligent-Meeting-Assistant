@@ -22,7 +22,7 @@ const LOGIN_URL =
   const page     = await context.newPage();
 
   console.log('Navigating to Google sign-in …');
-  await page.goto(LOGIN_URL);
+  await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
   if (await page.isVisible('input[type="email"]')) {
     if (GOOGLE_ACCOUNT_USER) {

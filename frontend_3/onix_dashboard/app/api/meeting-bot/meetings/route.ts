@@ -75,6 +75,8 @@ export async function GET(request: NextRequest) {
       return false;
     });
 
+    console.log(`DEBUG: allMeetings=${allMeetings.length}, filteredMeetings=${filteredMeetings.length}, userMeetingIds=${userMeetingIds.length}`);
+
     // Normalize and add source (avoids duplicate keys from backend)
     const meetingsWithSource = filteredMeetings.map((meeting: any) => ({
       meetingId: meeting.meetingId,

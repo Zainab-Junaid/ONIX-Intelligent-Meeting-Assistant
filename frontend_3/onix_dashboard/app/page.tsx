@@ -12,7 +12,7 @@ import { useExtensionMeetings } from "@/hooks/use-extension-meetings"
 import { useMemo, useState } from "react"
 import { cn } from "@/lib/utils"
 import { UpcomingMeetingsCard } from "@/components/upcoming-meetings-card"
-import { DarkModeToggle } from "@/components/dark-mode-toggle"
+
 
 const StartMeetingModal = dynamic(
   () => import("@/components/start-meeting-modal").then((m) => ({ default: m.StartMeetingModal })),
@@ -186,7 +186,6 @@ export default function Page() {
                 </div>
             }
             subtitle="Here's what's happening with your meetings."
-            actions={<DarkModeToggle />}
         >
             <div className="space-y-8">
                 {/* TOP SECTION: UPCOMING, QUICK ACTIONS, AT A GLANCE - equal height */}
