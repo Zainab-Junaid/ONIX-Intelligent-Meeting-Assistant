@@ -22,24 +22,6 @@ try {
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/meeting-transcripts';
 
-// MongoDB Schema (matching bot structure)
-const SegmentSchema = new mongoose.Schema({
-  segmentId: { type: String, required: true },
-  start: { type: Number, required: true },
-  end: { type: Number, required: true },
-  text: { type: String, required: true },
-  speaker: { type: String, required: true },
-}, { _id: false });
-
-const MeetingTranscriptSchema = new mongoose.Schema({
-  meetingId: { type: String, required: true, unique: true, index: true },
-  userId: { type: String, index: true },
-  meetingTitle: { type: String },
-  segments: { type: [SegmentSchema], default: [] },
-  createdAt: { type: Date, required: true, default: Date.now },
-  updatedAt: { type: Date, required: true, default: Date.now },
-});
-
 // POST endpoint to create test data
 export async function POST(request: NextRequest) {
   try {
@@ -71,6 +53,24 @@ export async function POST(request: NextRequest) {
     
     if (mongoose) {
       try {
+        // Define schemas only when mongoose is available
+        const SegmentSchema = new mongoose.Schema({
+          segmentId: { type: String, required: true },
+          start: { type: Number, required: true },
+          end: { type: Number, required: true },
+          text: { type: String, required: true },
+          speaker: { type: String, required: true },
+        }, { _id: false });
+
+        const MeetingTranscriptSchema = new mongoose.Schema({
+          meetingId: { type: String, required: true, unique: true, index: true },
+          userId: { type: String, index: true },
+          meetingTitle: { type: String },
+          segments: { type: [SegmentSchema], default: [] },
+          createdAt: { type: Date, required: true, default: Date.now },
+          updatedAt: { type: Date, required: true, default: Date.now },
+        });
+
         if (mongoose.connection.readyState === 0) {
           await mongoose.connect(MONGODB_URI);
           mongoConnected = true;

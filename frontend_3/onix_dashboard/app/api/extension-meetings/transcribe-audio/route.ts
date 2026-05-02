@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AssemblyAI } from 'assemblyai';
 import { getAuth } from 'firebase-admin/auth';
+import { getFirebaseAdmin } from '../../../../lib/firebase-admin';
 
 // Initialize Firebase Admin
 getFirebaseAdmin();

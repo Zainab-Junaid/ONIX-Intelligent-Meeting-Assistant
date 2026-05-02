@@ -10,8 +10,6 @@ const RECORDING_MAX_SIZE = 500 * 1024 * 1024; // 500 MB
 const SIGNED_URL_EXPIRY_DAYS = 7;
 
 function getAdminApp() {
-  );
-  }
   return admin.app();
 }
 
