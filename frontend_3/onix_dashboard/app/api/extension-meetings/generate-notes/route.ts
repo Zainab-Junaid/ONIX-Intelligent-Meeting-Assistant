@@ -3,18 +3,25 @@ import { getAuth } from 'firebase-admin/auth';
 import admin from 'firebase-admin';
 import { getFirebaseAdmin } from '../../../../lib/firebase-admin';
 import { AssemblyAI } from 'assemblyai';
+import { handleOptions, withCors } from '../../../../lib/cors';
+
 
 // Initialize Firebase Admin
 getFirebaseAdmin();
 
 
 
+
+export async function OPTIONS() {
+  return handleOptions();
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Get Firebase token from headers
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'No token provided' }, { status: 401 });
+      return withCors(NextResponse.json({ error: 'No token provided' }, { status: 401 }));
     }
 
     const token = authHeader.split('Bearer ')[1];
@@ -27,7 +34,7 @@ export async function POST(request: NextRequest) {
     const { meetingId, transcript, timestamp, previousNotes } = await request.json();
     
     if (!meetingId || !transcript) {
-      return NextResponse.json({ error: 'Meeting ID and transcript are required' }, { status: 400 });
+      return withCors(NextResponse.json({ error: 'Meeting ID and transcript are required' }, { status: 400 }));
     }
 
     // Check if AssemblyAI API key is configured
@@ -37,11 +44,11 @@ export async function POST(request: NextRequest) {
       // Return fallback notes - extract key points from transcript
       const fallbackNotes = generateFallbackNotes(transcript, timestamp);
       
-      return NextResponse.json({ 
+      return withCors(NextResponse.json({ 
         success: true, 
         notes: fallbackNotes,
         isFallback: true
-      });
+      }));
     }
 
     // Initialize AssemblyAI client
@@ -110,12 +117,12 @@ ${previousNotes ? `\n**Previous Notes Context:**\n${previousNotes.slice(-5).map(
         // Use fallback notes
         const fallbackNotes = generateFallbackNotes(transcript, timestamp);
         
-        return NextResponse.json({ 
+        return withCors(NextResponse.json({ 
           success: true, 
           error: 'Your account does not have access to LeMUR. Please upgrade or contact support@assemblyai.com for more information. Using fallback notes.',
           notes: fallbackNotes,
           isFallback: true
-        });
+        }));
       }
       
       // Re-throw other errors
@@ -149,11 +156,11 @@ ${previousNotes ? `\n**Previous Notes Context:**\n${previousNotes.slice(-5).map(
       console.warn('⚠️ Meeting document not found, cannot save notes');
     }
 
-    return NextResponse.json({ 
+    return withCors(NextResponse.json({ 
       success: true, 
       notes: notes,
       isFallback: false
-    });
+    }));
 
   } catch (error: any) {
     console.error('❌ Error generating notes:', error);
@@ -162,12 +169,12 @@ ${previousNotes ? `\n**Previous Notes Context:**\n${previousNotes.slice(-5).map(
     const { transcript, timestamp } = await request.json().catch(() => ({ transcript: '', timestamp: null }));
     const fallbackNotes = generateFallbackNotes(transcript, timestamp);
     
-    return NextResponse.json({ 
+    return withCors(NextResponse.json({ 
       success: true, 
       error: error.message || 'Failed to generate notes. Using fallback notes.',
       notes: fallbackNotes,
       isFallback: true
-    });
+    }));
   }
 }
 

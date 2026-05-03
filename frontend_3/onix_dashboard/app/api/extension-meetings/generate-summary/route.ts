@@ -5,6 +5,8 @@ import { getFirebaseAdmin } from '../../../../lib/firebase-admin';
 import { AssemblyAI } from 'assemblyai';
 import { setGlobalDispatcher, Agent } from 'undici';
 import { setDefaultResultOrder } from 'node:dns';
+import { handleOptions, withCors } from '../../../../lib/cors';
+
 
 // Initialize Firebase Admin
 getFirebaseAdmin();
@@ -28,6 +30,11 @@ setGlobalDispatcher(new Agent({
 
 
 
+
+export async function OPTIONS() {
+  return handleOptions();
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Check for Guest Mode
@@ -41,7 +48,7 @@ export async function POST(request: NextRequest) {
       // Get Firebase token from headers
       const authHeader = request.headers.get('authorization');
       if (!authHeader?.startsWith('Bearer ')) {
-        return NextResponse.json({ error: 'No token provided' }, { status: 401 });
+        return withCors(NextResponse.json({ error: 'No token provided' }, { status: 401 }));
       }
 
       const token = authHeader.split('Bearer ')[1];
@@ -55,7 +62,7 @@ export async function POST(request: NextRequest) {
     const { meetingId, transcript } = await request.json();
 
     if (!meetingId || !transcript) {
-      return NextResponse.json({ error: 'Meeting ID and transcript are required' }, { status: 400 });
+      return withCors(NextResponse.json({ error: 'Meeting ID and transcript are required' }, { status: 400 }));
     }
 
     // Check if AssemblyAI API key is configured
@@ -88,12 +95,12 @@ ${transcript.substring(0, 500)}...`,
         });
       }
 
-      return NextResponse.json({
+      return withCors(NextResponse.json({
         success: true,
         summary: fallbackSummary,
         actionItems: fallbackActionItems,
         isFallback: true
-      });
+      }));
     }
 
     // Initialize AssemblyAI client
@@ -246,13 +253,13 @@ ${transcript.substring(0, 2000)}${transcript.length > 2000 ? '...' : ''}
           });
         }
 
-        return NextResponse.json({
+        return withCors(NextResponse.json({
           success: true,
           summary: fallbackSummary,
           actionItems: fallbackActionItems,
           isFallback: true,
           error: 'LeMUR not available - using fallback summary'
-        });
+        }));
       }
       throw lemurError; // Re-throw if it's a different error
     }
@@ -337,12 +344,12 @@ ${transcript.substring(0, 2000)}${transcript.length > 2000 ? '...' : ''}
       await docRef.set(updateData, { merge: true });
     }
 
-    return NextResponse.json({
+    return withCors(NextResponse.json({
       success: true,
       summary: summary,
       actionItems: actionItems,
       isFallback: false
-    });
+    }));
 
   } catch (error: any) {
     console.error('❌ Error generating summary:', error);
@@ -357,13 +364,13 @@ ${transcript.substring(0, 2000)}${transcript.length > 2000 ? '...' : ''}
       model: 'error-fallback'
     };
 
-    return NextResponse.json({
+    return withCors(NextResponse.json({
       success: false,
       error: error.message || 'Failed to generate summary',
       summary: errorSummary,
       actionItems: [],
       isFallback: true
-    }, { status: 500 });
+    }, { status: 500 }));
   }
 }
 

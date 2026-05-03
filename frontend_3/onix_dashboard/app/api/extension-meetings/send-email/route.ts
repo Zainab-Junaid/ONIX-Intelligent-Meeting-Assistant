@@ -5,6 +5,8 @@ import { getFirebaseAdmin } from '../../../../lib/firebase-admin';
 import { sendEmail, generateSummaryEmailHTML } from '@/lib/email-service';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { handleOptions, withCors } from '../../../../lib/cors';
+
 
 // Initialize Firebase Admin
 getFirebaseAdmin();
@@ -49,12 +51,17 @@ async function getImgData(url: string): Promise<string | null> {
     }
 }
 
+
+export async function OPTIONS() {
+  return handleOptions();
+}
+
 export async function POST(request: NextRequest) {
     try {
         // Get Firebase token from headers
         const authHeader = request.headers.get('authorization');
         if (!authHeader?.startsWith('Bearer ')) {
-            return NextResponse.json({ error: 'No token provided' }, { status: 401 });
+            return withCors(NextResponse.json({ error: 'No token provided' }, { status: 401 }));
         }
 
         const token = authHeader.split('Bearer ')[1];
@@ -67,7 +74,7 @@ export async function POST(request: NextRequest) {
         const { meetingId, recipients } = await request.json();
 
         if (!meetingId || !recipients || !Array.isArray(recipients)) {
-            return NextResponse.json({ error: 'Meeting ID and recipients array are required' }, { status: 400 });
+            return withCors(NextResponse.json({ error: 'Meeting ID and recipients array are required' }, { status: 400 }));
         }
 
         // Fetch meeting data from Firestore
@@ -76,7 +83,7 @@ export async function POST(request: NextRequest) {
         const docSnap = await docRef.get();
 
         if (!docSnap.exists) {
-            return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
+            return withCors(NextResponse.json({ error: 'Meeting not found' }, { status: 404 }));
         }
 
         const meetingData = docSnap.data() || {};
@@ -234,11 +241,11 @@ export async function POST(request: NextRequest) {
             summaryEmailRecipients: recipients
         });
 
-        return NextResponse.json({ success: true, message: `Email sent to ${recipients.length} recipients` });
+        return withCors(NextResponse.json({ success: true, message: `Email sent to ${recipients.length} recipients` }));
 
     } catch (error: any) {
         console.error('❌ Error in send-email API:', error);
-        return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
+        return withCors(NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 }));
     }
 }
 

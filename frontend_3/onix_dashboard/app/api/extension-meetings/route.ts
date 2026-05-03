@@ -2,16 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from 'firebase-admin/auth';
 import admin from 'firebase-admin';
 import { getFirebaseAdmin } from '@/lib/firebase-admin';
+import { handleOptions, withCors } from '../../../lib/cors';
+
 
 // Initialize Firebase Admin if not already initialized
 getFirebaseAdmin();
+
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 export async function GET(request: NextRequest) {
   try {
     // Get Firebase token from headers
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'No token provided' }, { status: 401 });
+      return withCors(NextResponse.json({ error: 'No token provided' }, { status: 401 }));
     }
 
     const token = authHeader.split('Bearer ')[1];
@@ -89,13 +96,13 @@ export async function GET(request: NextRequest) {
     */
     const meetings = allMeetings;
 
-    return NextResponse.json(meetings);
+    return withCors(NextResponse.json(meetings));
   } catch (error: any) {
     console.error('Error fetching extension meetings:', error);
-    return NextResponse.json({ 
+    return withCors(NextResponse.json({ 
       error: 'Failed to fetch extension meetings', 
       details: error?.message 
-    }, { status: 500 });
+    }, { status: 500 }));
   }
 }
 

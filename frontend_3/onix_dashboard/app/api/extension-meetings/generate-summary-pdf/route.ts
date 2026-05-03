@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jsPDF from 'jspdf';
+import { handleOptions, withCors } from '../../../../lib/cors';
+
 
 const GUEST_MEETING_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -36,20 +38,25 @@ function formatSummaryLines(raw: string): { text: string; isSectionHeader: boole
  * Guest only (x-guest-mode: true). Body: { transcript, meetingTitle? }.
  * Calls generate-summary API then returns a PDF of the summary and action items.
  */
+
+export async function OPTIONS() {
+  return handleOptions();
+}
+
 export async function POST(request: NextRequest) {
   try {
     if (request.headers.get('x-guest-mode') !== 'true') {
-      return NextResponse.json({ error: 'Guest mode required' }, { status: 403 });
+      return withCors(NextResponse.json({ error: 'Guest mode required' }, { status: 403 }));
     }
 
     const body = await request.json();
     const { transcript, meetingTitle = 'Meeting' } = body;
 
     if (!transcript || typeof transcript !== 'string' || !transcript.trim()) {
-      return NextResponse.json(
+      return withCors(NextResponse.json(
         { error: 'transcript is required' },
         { status: 400 }
-      );
+      ));
     }
 
     // Invoke summary API (same origin as this request)
@@ -69,10 +76,10 @@ export async function POST(request: NextRequest) {
 
     if (!summaryRes.ok) {
       const err = await summaryRes.json().catch(() => ({}));
-      return NextResponse.json(
+      return withCors(NextResponse.json(
         { error: err.error || 'Summary generation failed' },
         { status: summaryRes.status }
-      );
+      ));
     }
 
     const data = await summaryRes.json();
@@ -196,9 +203,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: unknown) {
     console.error('[generate-summary-pdf]', error);
-    return NextResponse.json(
+    return withCors(NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to generate PDF' },
       { status: 500 }
-    );
+    ));
   }
 }

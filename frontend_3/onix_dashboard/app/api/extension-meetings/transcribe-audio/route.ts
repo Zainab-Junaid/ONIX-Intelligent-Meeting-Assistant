@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { AssemblyAI } from 'assemblyai';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirebaseAdmin } from '../../../../lib/firebase-admin';
+import { handleOptions, withCors } from '../../../../lib/cors';
+
 
 // Initialize Firebase Admin
 getFirebaseAdmin();
@@ -15,12 +17,17 @@ getFirebaseAdmin();
  * 
  * This endpoint processes audio chunks and returns real-time transcription
  */
+
+export async function OPTIONS() {
+  return handleOptions();
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Get Firebase token from headers
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'No token provided' }, { status: 401 });
+      return withCors(NextResponse.json({ error: 'No token provided' }, { status: 401 }));
     }
 
     const token = authHeader.split('Bearer ')[1];
@@ -36,16 +43,16 @@ export async function POST(request: NextRequest) {
     const isFinal = formData.get('isFinal') === 'true';
 
     if (!audioFile || !meetingId) {
-      return NextResponse.json({ 
+      return withCors(NextResponse.json({ 
         error: 'Audio file and meetingId are required' 
-      }, { status: 400 });
+      }, { status: 400 }));
     }
 
     // Check if AssemblyAI API key is configured
     if (!process.env.ASSEMBLYAI_API_KEY) {
-      return NextResponse.json({ 
+      return withCors(NextResponse.json({ 
         error: 'ASSEMBLYAI_API_KEY not configured' 
-      }, { status: 500 });
+      }, { status: 500 }));
     }
 
     // Initialize AssemblyAI client
@@ -77,19 +84,19 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Transcription result: "${transcriptionText.substring(0, 50)}..."`);
 
-    return NextResponse.json({
+    return withCors(NextResponse.json({
       success: true,
       text: transcriptionText,
       confidence: confidence,
       isFinal: isFinal,
       timestamp: Date.now()
-    });
+    }));
 
   } catch (error: any) {
     console.error('❌ Error transcribing audio:', error);
-    return NextResponse.json({ 
+    return withCors(NextResponse.json({ 
       error: error.message || 'Failed to transcribe audio' 
-    }, { status: 500 });
+    }, { status: 500 }));
   }
 }
 
