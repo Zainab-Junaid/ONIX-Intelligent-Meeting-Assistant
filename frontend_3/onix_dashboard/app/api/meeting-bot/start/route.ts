@@ -7,8 +7,6 @@ import { getFirebaseAdmin } from '../../../../lib/firebase-admin';
 // Initialize Firebase Admin
 getFirebaseAdmin();
 
-
-
 // Meeting Bot Integration
 
 export async function POST(request: NextRequest) {
@@ -31,8 +29,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Meeting URL required' }, { status: 400 });
     }
 
-    // Forward to backend to start container (backend will create the job if needed)
-    const botResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/submit-link`, {
+    // Forward to backend to start container
+    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
+    const botResponse = await fetch(`${backendUrl}/submit-link`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
