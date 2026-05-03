@@ -204,7 +204,7 @@ async function downloadGuestMeetingRecord(transcript, meetingTitle) {
 
   try {
     // Call backend API with x-guest-mode header
-    const dashboardUrl = 'http://localhost:3000' // TODO: Make configurable
+    const dashboardUrl = 'https://onixdashboard.vercel.app' // TODO: Make configurable
     const response = await fetch(`${dashboardUrl}/api/extension-meetings/generate-summary`, {
       method: 'POST',
       headers: {
@@ -538,7 +538,7 @@ function initUI() {
       liveQaError.textContent = ''
       liveQaAnswer.textContent = '...'
       liveQaAskBtn.disabled = true
-      const dashboardUrl = 'http://localhost:3000'
+      const dashboardUrl = 'https://onixdashboard.vercel.app'
       const transcript = typeof getTranscriptText === 'function' ? getTranscriptText() : ''
       const meetingTitle = (titleEl && titleEl.value) ? titleEl.value.trim() : 'This meeting'
       try {
@@ -1295,7 +1295,7 @@ function initUI() {
       statusEl.textContent = 'Generating summary...'
       statusEl.className = 'muted'
       downloadSummaryBtn.disabled = true
-      const dashboardUrl = 'http://localhost:3000'
+      const dashboardUrl = 'https://onixdashboard.vercel.app'
       try {
         const res = await fetch(`${dashboardUrl}/api/extension-meetings/generate-summary-pdf`, {
           method: 'POST',
@@ -2366,7 +2366,7 @@ async function generateAutoNotes(transcriptText) {
     const token = await currentUser.getIdToken()
 
     // Call API to generate notes
-    const dashboardUrl = 'http://localhost:3000' // TODO: Make this configurable
+    const dashboardUrl = 'https://onixdashboard.vercel.app' // TODO: Make this configurable
     console.log('📝 Calling notes API:', `${dashboardUrl}/api/extension-meetings/generate-notes`)
     console.log('📝 Meeting ID:', currentMeetingDocId)
     console.log('📝 Transcript length:', recentTranscript.length)
@@ -3064,7 +3064,7 @@ async function generateSummary() {
     // Call API to generate summary (use relative URL - will work with dashboard)
     // For extension, we need to determine the dashboard URL
     // You can set this in extension settings or use a default
-    const dashboardUrl = 'http://localhost:3000' // TODO: Make this configurable
+    const dashboardUrl = 'https://onixdashboard.vercel.app' // TODO: Make this configurable
     let response
     try {
       response = await fetch(`${dashboardUrl}/api/extension-meetings/generate-summary`, {
@@ -3164,7 +3164,7 @@ async function sendAutomatedEmails(meetingId, recipients) {
     }
     const token = await currentUser.getIdToken();
 
-    const dashboardUrl = 'http://localhost:3000';
+    const dashboardUrl = 'https://onixdashboard.vercel.app';
     console.log(`📧 Sending emails for meeting ${meetingId} to: ${recipients}`);
 
     const response = await fetch(`${dashboardUrl}/api/extension-meetings/send-email`, {
