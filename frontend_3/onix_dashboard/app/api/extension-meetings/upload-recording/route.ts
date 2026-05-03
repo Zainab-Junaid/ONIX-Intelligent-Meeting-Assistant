@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from 'firebase-admin/auth';
 import admin from 'firebase-admin';
 import { getFirebaseAdmin } from '../../../../lib/firebase-admin';
+import { handleOptions, withCors } from '../../../../lib/cors';
+
 
 // Initialize Firebase Admin
 getFirebaseAdmin();
@@ -13,12 +15,17 @@ function getAdminApp() {
   return admin.app();
 }
 
+
+export async function OPTIONS() {
+  return handleOptions();
+}
+
 export async function POST(request: NextRequest) {
   try {
     getAdminApp();
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'No token provided' }, { status: 401 });
+      return withCors(NextResponse.json({ error: 'No token provided' }, { status: 401 }));
     }
 
     const token = authHeader.split('Bearer ')[1];
@@ -30,17 +37,17 @@ export async function POST(request: NextRequest) {
     const file = formData.get('recording') as File | null;
 
     if (!meetingId || !file || !(file instanceof Blob)) {
-      return NextResponse.json(
+      return withCors(NextResponse.json(
         { error: 'meetingId and recording file are required' },
         { status: 400 }
-      );
+      ));
     }
 
     if (file.size > RECORDING_MAX_SIZE) {
-      return NextResponse.json(
+      return withCors(NextResponse.json(
         { error: 'Recording file too large' },
         { status: 400 }
-      );
+      ));
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -72,15 +79,15 @@ export async function POST(request: NextRequest) {
       { merge: true }
     );
 
-    return NextResponse.json({ success: true, recordingUrl: signedUrl });
+    return withCors(NextResponse.json({ success: true, recordingUrl: signedUrl }));
   } catch (error: any) {
     console.error('Error uploading recording:', error);
-    return NextResponse.json(
+    return withCors(NextResponse.json(
       {
         error: 'Failed to upload recording',
         details: error?.message,
       },
       { status: 500 }
-    );
+    ));
   }
 }

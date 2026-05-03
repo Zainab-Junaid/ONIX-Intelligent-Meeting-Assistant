@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuth } from 'firebase-admin/auth';
 import admin from 'firebase-admin';
 import { getFirebaseAdmin } from '../../../../lib/firebase-admin';
+import { handleOptions, withCors } from '../../../../lib/cors';
+
 
 // Initialize Firebase Admin
 getFirebaseAdmin();
@@ -9,12 +11,17 @@ getFirebaseAdmin();
 
 
 // DELETE - Delete a note
+
+export async function OPTIONS() {
+  return handleOptions();
+}
+
 export async function DELETE(request: NextRequest) {
   try {
     // Get Firebase token from headers
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'No token provided' }, { status: 401 });
+      return withCors(NextResponse.json({ error: 'No token provided' }, { status: 401 }));
     }
 
     const token = authHeader.split('Bearer ')[1];
@@ -29,7 +36,7 @@ export async function DELETE(request: NextRequest) {
     const noteId = searchParams.get('noteId');
     
     if (!meetingId || !noteId) {
-      return NextResponse.json({ error: 'Meeting ID and note ID are required' }, { status: 400 });
+      return withCors(NextResponse.json({ error: 'Meeting ID and note ID are required' }, { status: 400 }));
     }
 
     const db = admin.firestore();
@@ -38,7 +45,7 @@ export async function DELETE(request: NextRequest) {
     // Get current document
     const docSnap = await docRef.get();
     if (!docSnap.exists) {
-      return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
+      return withCors(NextResponse.json({ error: 'Meeting not found' }, { status: 404 }));
     }
 
     const data = docSnap.data();
@@ -55,17 +62,17 @@ export async function DELETE(request: NextRequest) {
 
     console.log(`✅ Note ${noteId} deleted from meeting ${meetingId}`);
 
-    return NextResponse.json({ 
+    return withCors(NextResponse.json({ 
       success: true,
       message: 'Note deleted successfully'
-    });
+    }));
 
   } catch (error: any) {
     console.error('❌ Error deleting note:', error);
-    return NextResponse.json({ 
+    return withCors(NextResponse.json({ 
       success: false,
       error: error.message || 'Failed to delete note'
-    }, { status: 500 });
+    }, { status: 500 }));
   }
 }
 
@@ -75,7 +82,7 @@ export async function PUT(request: NextRequest) {
     // Get Firebase token from headers
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'No token provided' }, { status: 401 });
+      return withCors(NextResponse.json({ error: 'No token provided' }, { status: 401 }));
     }
 
     const token = authHeader.split('Bearer ')[1];
@@ -88,7 +95,7 @@ export async function PUT(request: NextRequest) {
     const { meetingId, noteId, text, screenshotUrl, deleteScreenshot } = await request.json();
     
     if (!meetingId || !noteId) {
-      return NextResponse.json({ error: 'Meeting ID and note ID are required' }, { status: 400 });
+      return withCors(NextResponse.json({ error: 'Meeting ID and note ID are required' }, { status: 400 }));
     }
 
     const db = admin.firestore();
@@ -97,7 +104,7 @@ export async function PUT(request: NextRequest) {
     // Get current document
     const docSnap = await docRef.get();
     if (!docSnap.exists) {
-      return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
+      return withCors(NextResponse.json({ error: 'Meeting not found' }, { status: 404 }));
     }
 
     const data = docSnap.data();
@@ -137,17 +144,17 @@ export async function PUT(request: NextRequest) {
 
     console.log(`✅ Note ${noteId} updated in meeting ${meetingId}`);
 
-    return NextResponse.json({ 
+    return withCors(NextResponse.json({ 
       success: true,
       message: 'Note updated successfully'
-    });
+    }));
 
   } catch (error: any) {
     console.error('❌ Error updating note:', error);
-    return NextResponse.json({ 
+    return withCors(NextResponse.json({ 
       success: false,
       error: error.message || 'Failed to update note'
-    }, { status: 500 });
+    }, { status: 500 }));
   }
 }
 

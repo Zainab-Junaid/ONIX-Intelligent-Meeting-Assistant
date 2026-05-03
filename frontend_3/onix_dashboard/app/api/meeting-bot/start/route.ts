@@ -7,8 +7,6 @@ import { getFirebaseAdmin } from '../../../../lib/firebase-admin';
 // Initialize Firebase Admin
 getFirebaseAdmin();
 
-
-
 // Meeting Bot Integration
 
 export async function POST(request: NextRequest) {
@@ -20,7 +18,7 @@ export async function POST(request: NextRequest) {
     }
 
     const token = authHeader.split('Bearer ')[1];
-    
+
     // Verify Firebase token
     const decodedToken = await getAuth().verifyIdToken(token);
     const userId = decodedToken.uid;
@@ -31,8 +29,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Meeting URL required' }, { status: 400 });
     }
 
-    // Forward to backend to start container (backend will create the job if needed)
-    const botResponse = await fetch('http://127.0.0.1:3001/submit-link', {
+    // Forward to backend to start container
+    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://137.184.28.83:3001';
+    const botResponse = await fetch(`${backendUrl}/submit-link`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -42,7 +41,7 @@ export async function POST(request: NextRequest) {
         language: language || 'English'
       })
     });
-    
+
     if (!botResponse.ok) {
       throw new Error('Bot failed to start');
     }

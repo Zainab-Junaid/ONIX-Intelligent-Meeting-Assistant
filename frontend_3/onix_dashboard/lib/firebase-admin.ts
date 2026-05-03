@@ -1,4 +1,3 @@
-// import 'server-only'; // Removed as package is missing in frontend_3
 import * as admin from 'firebase-admin';
 import path from 'path';
 import fs from 'fs';
@@ -6,66 +5,60 @@ import fs from 'fs';
 // Initialize Firebase Admin if not already initialized
 function initFirebase() {
   console.log('🔄 initFirebase() in lib/firebase-admin called');
-  
+
   if (admin.apps.length > 0) {
     console.log('✅ Firebase Admin app already exists, reusing.');
     return admin.app();
   }
 
-  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || (() => {
+  let serviceAccount: object | null = null;
+
+  // ── 1. Try env variable first (required on Vercel / any cloud deployment) ──
+  const envJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (envJson) {
     try {
-      console.log('🔍 Locating service account file...');
-      
-      const keyPath = path.resolve(process.cwd(), 'backend', 'firebase-service-account.json');
-      console.log('   Checking contents of:', keyPath);
-      
-      if (fs.existsSync(keyPath)) {
-        console.log('   ✅ Found service account at backend/firebase-service-account.json');
-        return JSON.parse(fs.readFileSync(keyPath, 'utf8'));
-      }
-
-      // Check alternate location just in case
-      const localDevPath = path.join(process.cwd(), 'backend', 'firebase-service-account.json');
-      console.log('   Checking contents of:', localDevPath);
-      if (fs.existsSync(localDevPath)) {
-         console.log('   ✅ Found service account via join path');
-         return JSON.parse(fs.readFileSync(localDevPath, 'utf8'));
-      }
-      
-      // Try one level up if cwd is frontend/dashboard
-      const upOnePath = path.resolve(process.cwd(), '..', '..', 'backend', 'firebase-service-account.json');
-      console.log('   Checking contents of:', upOnePath);
-      if (fs.existsSync(upOnePath)) {
-         console.log('   ✅ Found service account via up-one path');
-         return JSON.parse(fs.readFileSync(upOnePath, 'utf8'));
-      }
-
-      // Try looking in the root backend folder if we are in frontend_2/onix_dashboard
-      const rootBackendPath = path.resolve(process.cwd(), '..', '..', 'backend', 'firebase-service-account.json');
-      console.log('   Checking contents of (root backend):', rootBackendPath);
-      if (fs.existsSync(rootBackendPath)) {
-         console.log('   ✅ Found service account via root backend path');
-         return JSON.parse(fs.readFileSync(rootBackendPath, 'utf8'));
-      }
-
-      console.error('❌ Credentials path not found in any expected location. CWD is:', process.cwd());
-      return null;
-    } catch (error: any) {
-      console.error('❌ Error loading service account:', error.message);
-      return null;
+      serviceAccount = typeof envJson === 'string' ? JSON.parse(envJson) : envJson;
+      console.log('✅ Loaded Firebase service account from FIREBASE_SERVICE_ACCOUNT_JSON env var');
+    } catch (e: any) {
+      console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON env var:', e.message);
     }
-  })();
+  }
+
+  // ── 2. Fall back to local file (local dev only) ──
+  if (!serviceAccount) {
+    const candidatePaths = [
+      path.resolve(process.cwd(), 'backend', 'firebase-service-account.json'),
+      path.resolve(process.cwd(), 'firebase-service-account.json'),
+      path.resolve(process.cwd(), '..', 'backend', 'firebase-service-account.json'),
+      path.resolve(process.cwd(), '..', '..', 'backend', 'firebase-service-account.json'),
+    ];
+
+    for (const p of candidatePaths) {
+      if (fs.existsSync(p)) {
+        try {
+          serviceAccount = JSON.parse(fs.readFileSync(p, 'utf8'));
+          console.log('✅ Loaded Firebase service account from file:', p);
+          break;
+        } catch (e: any) {
+          console.error('❌ Error reading service account file at', p, ':', e.message);
+        }
+      }
+    }
+  }
 
   if (!serviceAccount) {
-    console.error('❌ Firebase Service Account credentials missing or failed to load');
-    // Don't throw top-level, let the caller handle null
+    console.error(
+      '❌ Firebase Service Account credentials not found.\n' +
+      '   On Vercel: set FIREBASE_SERVICE_ACCOUNT_JSON environment variable to the full JSON string.\n' +
+      '   Locally: place firebase-service-account.json in the backend/ folder.'
+    );
     return null;
   }
 
   try {
     console.log('🚀 Initializing Firebase Admin SDK...');
     const app = admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount)
+      credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
     });
     console.log('✅ Firebase Admin SDK initialized successfully');
     return app;

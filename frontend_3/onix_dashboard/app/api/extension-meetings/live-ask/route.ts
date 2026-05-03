@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { answerFromTranscriptSmart } from '@/lib/live-qa';
+import { handleOptions, withCors } from '../../../../lib/cors';
 
-// Allow Chrome extension origin for live-ask (sidepanel calls dashboard)
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
+
+
 
 export async function OPTIONS() {
-  return NextResponse.json({}, { headers: corsHeaders });
+  return handleOptions();
 }
 
 export async function POST(request: NextRequest) {
@@ -18,10 +15,10 @@ export async function POST(request: NextRequest) {
     const { transcript, meetingTitle, question, answerInEnglish } = body;
 
     if (typeof question !== 'string' || !question.trim()) {
-      return NextResponse.json(
+      return withCors(NextResponse.json(
         { error: 'question is required' },
-        { status: 400, headers: corsHeaders }
-      );
+        { status: 400 }
+      ));
     }
 
     const transcriptStr = typeof transcript === 'string' ? transcript : '';
@@ -33,12 +30,12 @@ export async function POST(request: NextRequest) {
       process.env.ASSEMBLYAI_API_KEY
     );
 
-    return NextResponse.json({ answer }, { headers: corsHeaders });
+    return withCors(NextResponse.json({ answer }));
   } catch (error: any) {
     console.error('[extension live-ask] error:', error);
-    return NextResponse.json(
+    return withCors(NextResponse.json(
       { error: 'Live Q&A failed', details: error?.message },
-      { status: 500, headers: corsHeaders }
-    );
+      { status: 500 }
+    ));
   }
 }
