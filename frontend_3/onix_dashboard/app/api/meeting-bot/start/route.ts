@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Forward to backend to start container
-    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
+    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://137.184.28.83:3001';
     const botResponse = await fetch(`${backendUrl}/submit-link`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
