@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     }
 
     const token = authHeader.split('Bearer ')[1];
-    
+
     // Verify Firebase token
     const decodedToken = await getAuth().verifyIdToken(token);
     const userId = decodedToken.uid;
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Forward to backend to start container (backend will create the job if needed)
-    const botResponse = await fetch('http://127.0.0.1:3001/submit-link', {
+    const botResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/submit-link`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
         language: language || 'English'
       })
     });
-    
+
     if (!botResponse.ok) {
       throw new Error('Bot failed to start');
     }
