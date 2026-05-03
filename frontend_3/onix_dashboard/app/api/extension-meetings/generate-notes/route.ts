@@ -44,10 +44,33 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Initialize AssemblyAI client
-    const client = new AssemblyAI({
-      apiKey: process.env.ASSEMBLYAI_API_KEY,
-    });
+    // Initialize LLM Gateway helper
+    const apiKey = process.env.ASSEMBLYAI_API_KEY;
+    async function callLLMGateway(systemPrompt: string, userText: string) {
+      const response = await fetch("https://llm-gateway.assemblyai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userText }
+          ]
+        })
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        const err: any = new Error(`LLM Gateway error: ${response.status} ${response.statusText}`);
+        err.status = response.status;
+        err.response = errorText;
+        throw err;
+      }
+      const data = await response.json();
+      return { response: data.choices[0].message.content };
+    }
 
     console.log(`📝 Generating notes for meeting ${meetingId}`);
     console.log(`📝 Transcript length: ${transcript.length} characters`);
@@ -86,12 +109,10 @@ ${previousNotes ? `\n**Previous Notes Context:**\n${previousNotes.slice(-5).map(
 
     let notesResp;
     try {
-      notesResp = await client.lemur.task({
-        input_text: transcript,
-        final_model: "anthropic/claude-sonnet-4-20250514",
-        prompt: notesPrompt,
-        context: "Student note-taking from lecture transcript",
-      });
+      notesResp = await callLLMGateway(
+        "Student note-taking from lecture transcript",
+        notesPrompt + `\n\nTranscript:\n${transcript}`
+      );
 
       console.log(`✅ Notes generated successfully`);
     } catch (lemurError: any) {

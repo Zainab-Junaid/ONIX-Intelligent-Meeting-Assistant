@@ -28,8 +28,34 @@ Task: Translate the provided transcript into clear, professional English.
 - Keep the same format: each line should be "SpeakerName: spoken text" (preserve speaker labels).
 - Do not add any introductory or concluding remarks (like "Here is the translation"). JUST return the English transcript.`;
 
+async function callLLMGateway(systemPrompt: string, userText: string, apiKey: string) {
+  const response = await fetch("https://llm-gateway.assemblyai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userText }
+      ]
+    })
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    const err: any = new Error(`LLM Gateway error: ${response.status} ${response.statusText}`);
+    err.status = response.status;
+    err.response = errorText;
+    throw err;
+  }
+  const data = await response.json();
+  return { response: data.choices[0].message.content };
+}
+
 /**
- * Translate transcript to English using LeMUR (same as generate-summary). Returns original on failure.
+ * Translate transcript to English using LLM Gateway. Returns original on failure.
  */
 async function translateTranscriptToEnglish(
   transcript: string,
@@ -37,13 +63,11 @@ async function translateTranscriptToEnglish(
 ): Promise<string> {
   if (!transcript.trim()) return transcript;
   try {
-    const client = new AssemblyAI({ apiKey });
-    const resp = await client.lemur.task({
-      input_text: transcript,
-      final_model: 'anthropic/claude-sonnet-4-20250514',
-      prompt: TRANSLATE_PROMPT,
-      context: 'Translate meeting transcript to English for Q&A',
-    });
+    const resp = await callLLMGateway(
+      'Translate meeting transcript to English for Q&A\n\n' + TRANSLATE_PROMPT,
+      transcript,
+      apiKey
+    );
     const translated = (resp?.response ?? '').trim();
     if (translated) return translated;
   } catch (err) {
@@ -244,13 +268,11 @@ ${languageRule}
 - Plain language, no markdown headers.`;
 
   try {
-    const client = new AssemblyAI({ apiKey: key });
-    const resp = await client.lemur.task({
-      input_text: transcriptForQA,
-      final_model: 'anthropic/claude-sonnet-4-20250514',
-      prompt,
-      context: 'Live meeting Q&A',
-    });
+    const resp = await callLLMGateway(
+      'Live meeting Q&A\n\n' + prompt,
+      transcriptForQA,
+      key
+    );
 
     const answer = (resp?.response ?? '').trim();
     if (answer) return answer;

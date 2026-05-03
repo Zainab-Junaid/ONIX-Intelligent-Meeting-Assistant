@@ -108,9 +108,32 @@ ${transcript.substring(0, 500)}...`,
     console.log(`📝 Transcript length: ${transcript.length} characters`);
     console.log(`🔑 API Key present: ${apiKey ? 'Yes (starts with ' + apiKey.substring(0, 10) + '...)' : 'No'}`);
 
-    const client = new AssemblyAI({
-      apiKey: apiKey,
-    });
+    // Initialize helper for LLM Gateway
+    async function callLLMGateway(systemPrompt: string, userText: string) {
+      const response = await fetch("https://llm-gateway.assemblyai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userText }
+          ]
+        })
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        const err: any = new Error(`LLM Gateway error: ${response.status} ${response.statusText}`);
+        err.status = response.status;
+        err.response = errorText;
+        throw err;
+      }
+      const data = await response.json();
+      return { response: data.choices[0].message.content };
+    }
 
     // Generate summary using AssemblyAI LeMUR (no character limit for testing)
     let summaryResp, actionItemsResp;
@@ -121,11 +144,10 @@ ${transcript.substring(0, 500)}...`,
       // We'll ask LeMUR to translate to English if it's not already
       console.log('🌍 Checking/Translating transcript to English...');
       try {
-        const translationResp = await client.lemur.task({
-          input_text: transcript,
-          final_model: "anthropic/claude-sonnet-4-20250514",
-          prompt: "You are a professional translator. specialized in technical and business meetings. \n\nTask: Translate the provided transcript into clear, professional English. \n- If the text is already in English, output it exactly as is.\n- If it is in another language (e.g., Urdu, Hindi, Spanish), translate it to English while preserving the original meaning, tone, and speaker context.\n- Do not add any introductory or concluding remarks (like 'Here is the translation'). JUST return the English text.",
-        });
+        const translationResp = await callLLMGateway(
+          "You are a professional translator. specialized in technical and business meetings. \n\nTask: Translate the provided transcript into clear, professional English. \n- If the text is already in English, output it exactly as is.\n- If it is in another language (e.g., Urdu, Hindi, Spanish), translate it to English while preserving the original meaning, tone, and speaker context.\n- Do not add any introductory or concluding remarks (like 'Here is the translation'). JUST return the English text.",
+          transcript
+        );
 
         if (translationResp.response && translationResp.response.length > 0) {
           textToProcess = translationResp.response;
@@ -137,11 +159,8 @@ ${transcript.substring(0, 500)}...`,
       }
 
       // Step 2: Generate Summary from (translated) text
-      summaryResp = await client.lemur.summary({
-        input_text: textToProcess, // Use the translated text
-        answer_format: "bulleted_list",
-        final_model: "anthropic/claude-sonnet-4-20250514",
-        context: `Generate a comprehensive, detailed meeting summary that captures all important information. Structure your summary as follows:
+      summaryResp = await callLLMGateway(
+        `Generate a comprehensive, detailed meeting summary that captures all important information. Structure your summary as follows:
 
 ## Executive Summary
 - Brief overview of the meeting purpose and main outcomes
@@ -175,14 +194,15 @@ ${transcript.substring(0, 500)}...`,
 - Resources or tools mentioned
 - Contacts or references provided
 
-Make the summary thorough, well-organized, and easy to scan. Include specific details, names, and context. Focus on actionable insights and information that will be useful for future reference.`,
-      });
+Make the summary thorough, well-organized, and easy to scan. Include specific details, names, and context. Focus on actionable insights and information that will be useful for future reference.
+Ensure the format is a bulleted list.`,
+        textToProcess
+      );
 
       // Generate action items using the same prompt as the meeting bot
-      actionItemsResp = await client.lemur.task({
-        input_text: textToProcess,
-        final_model: "anthropic/claude-sonnet-4-20250514",
-        prompt: `You are extracting action items from a meeting transcript.
+      actionItemsResp = await callLLMGateway(
+        "Action items extraction from meeting transcript",
+        `You are extracting action items from a meeting transcript.
 The transcript may be in any language — always extract items in ENGLISH, translating if needed.
 
 Return ONLY a valid JSON array. Each object must have:
@@ -199,9 +219,11 @@ Rules:
 - If no one is assigned, set "assignedTo" to null
 - Set priority based on urgency cues in the transcript
 - There is no fixed number of action items — extract as many or as few as the meeting warrants
-- If no action items exist at all, return an empty array []`,
-        context: "Action items extraction from meeting transcript",
-      });
+- If no action items exist at all, return an empty array []
+
+Transcript:
+${textToProcess}`
+      );
     } catch (lemurError: any) {
       // Log the full error for debugging
       console.error('❌ AssemblyAI LeMUR API Error:', lemurError);
