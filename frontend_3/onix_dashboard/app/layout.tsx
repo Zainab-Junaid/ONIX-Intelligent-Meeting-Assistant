@@ -9,6 +9,13 @@ import { AnalyticsClient } from '@/components/analytics-client'
 export const metadata: Metadata = {
   title: 'Onix',
   description: 'Onix Dashboard',
+  icons: {
+    icon: [
+      { url: '/images/onix.png', type: 'image/png' },
+    ],
+    shortcut: '/images/onix.png',
+    apple: '/images/onix.png',
+  },
 }
 
 export default function RootLayout({

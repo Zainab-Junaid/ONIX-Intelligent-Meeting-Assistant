@@ -106,3 +106,46 @@ export async function GET(request: NextRequest) {
   }
 }
 
+export async function DELETE(request: NextRequest) {
+  try {
+    // Get Firebase token from headers
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return withCors(NextResponse.json({ error: 'No token provided' }, { status: 401 }));
+    }
+
+    const token = authHeader.split('Bearer ')[1];
+
+    // Verify Firebase token
+    const decodedToken = await getAuth().verifyIdToken(token);
+    const userId = decodedToken.uid;
+
+    // Get meetingId from query params
+    const { searchParams } = new URL(request.url);
+    const meetingId = searchParams.get('meetingId');
+
+    if (!meetingId) {
+      return withCors(NextResponse.json({ error: 'meetingId is required' }, { status: 400 }));
+    }
+
+    // Get Firestore instance and delete the document
+    const db = admin.firestore();
+    const meetingRef = db.collection('users').doc(userId).collection('meetings').doc(meetingId);
+
+    const doc = await meetingRef.get();
+    if (!doc.exists) {
+      return withCors(NextResponse.json({ error: 'Meeting not found' }, { status: 404 }));
+    }
+
+    await meetingRef.delete();
+
+    console.log(`✅ Extension meeting ${meetingId} deleted for user ${userId}`);
+    return withCors(NextResponse.json({ message: 'Meeting deleted successfully' }));
+  } catch (error: any) {
+    console.error('Error deleting extension meeting:', error);
+    return withCors(NextResponse.json({
+      error: 'Failed to delete meeting',
+      details: error?.message
+    }, { status: 500 }));
+  }
+}

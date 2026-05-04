@@ -1286,8 +1286,10 @@ export default function Page() {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="transcript" className="mt-6">
-              <div className="rounded-lg border p-6 bg-white shadow-sm space-y-4">
+            <div className="flex flex-col lg:flex-row gap-6 relative items-start">
+              <div className="flex-1 min-w-0">
+                <TabsContent value="transcript" className="mt-6">
+                  <div className="rounded-lg border p-6 bg-white shadow-sm space-y-4">
                 <div>
                   <h3 className="font-medium mb-4">Original Transcript</h3>
                   <div className="bg-gray-50 rounded-xl border p-4 max-h-[600px] overflow-y-auto shadow-inner">
@@ -1688,6 +1690,19 @@ export default function Page() {
                 )}
               </div>
             </TabsContent>
+              </div>
+
+              {isAskOnixOpen && (
+                <div className="w-[380px] flex-shrink-0 sticky top-24 self-start h-[calc(100vh-14rem)] flex flex-col bg-white border rounded-xl shadow-sm animate-in slide-in-from-right-5 duration-300 overflow-hidden mt-6">
+                  <AskOnixPanel 
+                    onClose={() => setIsAskOnixOpen(false)}
+                    meetingId={extensionMeeting.id}
+                    meetingTitle={extensionMeeting.title || 'Meeting'}
+                    transcript={parseTranscriptToSegments(extensionMeeting.transcript || '')}
+                  />
+                </div>
+              )}
+            </div>
           </Tabs>
 
           {extensionMeeting.meetingURL && (
@@ -1698,6 +1713,8 @@ export default function Page() {
             </div>
           )}
         </div>
+
+        {!isAskOnixOpen && <FloatingAskOnixButton onClick={() => setIsAskOnixOpen(true)} />}
       </AppShell>
     )
   }

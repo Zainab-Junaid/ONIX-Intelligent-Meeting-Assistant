@@ -9,7 +9,7 @@ import Link from "next/link"
 import { useAuth } from "@/components/auth-provider"
 import { useBotMeetings } from "@/hooks/use-bot-meetings"
 import { useExtensionMeetings } from "@/hooks/use-extension-meetings"
-import { useMemo, useState } from "react"
+import { useMemo, useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { UpcomingMeetingsCard } from "@/components/upcoming-meetings-card"
 
@@ -25,6 +25,27 @@ export default function Page() {
     const { meetings: extensionMeetings } = useExtensionMeetings()
     const [isStartMeetingOpen, setIsStartMeetingOpen] = useState(false)
     const [startMeetingTab, setStartMeetingTab] = useState<'selection' | 'bot'>('selection')
+    const [completedTaskIds, setCompletedTaskIds] = useState<Set<string>>(new Set())
+
+    useEffect(() => {
+        const loadCompletedIds = () => {
+            if (typeof window !== 'undefined') {
+                try {
+                    const raw = localStorage.getItem('onix_completed_task_ids')
+                    if (raw) {
+                        const arr = JSON.parse(raw) as string[]
+                        setCompletedTaskIds(new Set(Array.isArray(arr) ? arr : []))
+                    }
+                } catch (e) {}
+            }
+        };
+
+        loadCompletedIds();
+
+        // Check for updates since the storage event doesn't fire in the same window
+        const intervalId = setInterval(loadCompletedIds, 1000);
+        return () => clearInterval(intervalId);
+    }, [])
 
     const getGreeting = () => {
         const hour = new Date().getHours()
@@ -40,98 +61,98 @@ export default function Page() {
         let totalTasks = 0
         let allActionItems: { text: string; date: Date }[] = []
 
-        // Helper function to extract action items from text
-        const extractActionItems = (text: string) => {
-            // potential headers for action items
-            const headers = ["Action Items", "Next Steps", "To-Do", "Tasks", "Follow-up"];
-            const lowerText = text.toLowerCase();
+        // Helper function to extract action items exactly like app/tasks/page.tsx
+        const extractBotActionItems = (summaryText: string) => {
+            const actionItems: string[] = []
+            const lines = summaryText.split('\n')
 
-            let startIndex = -1;
-            for (const header of headers) {
-                const idx = lowerText.indexOf(header.toLowerCase());
-                if (idx !== -1) {
-                    startIndex = idx;
-                    break;
+            const negativePhrases = [
+                "no specific action", "no action items", "no follow-up",
+                "no tasks", "none identified", "no specific facts",
+                "no deadlines", "not specified"
+            ];
+
+            const isValidTask = (text: string) => {
+                const lower = text.toLowerCase();
+                return !negativePhrases.some(p => lower.includes(p)) && text.length > 5;
+            }
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim()
+                if (line.toLowerCase().includes('action items:') || line.toLowerCase().includes('next steps:') || line.toLowerCase().includes('to-do:')) {
+                    for (let j = i + 1; j < lines.length; j++) {
+                        const nextLine = lines[j].trim()
+                        if (nextLine.toLowerCase().includes(':') &&
+                            (nextLine.toLowerCase().includes('next steps') ||
+                             nextLine.toLowerCase().includes('decisions') ||
+                             nextLine.toLowerCase().includes('important info'))) break
+
+                        if (!nextLine) continue
+
+                        if (nextLine.match(/^[•\-\*]\s+/) || nextLine.match(/^\d+\.\s+/)) {
+                            const cleanLine = nextLine.replace(/^[•\-\*]\s+/, '').replace(/^\d+\.\s+/, '').trim();
+                            if (isValidTask(cleanLine)) {
+                                actionItems.push(cleanLine)
+                            }
+                        }
+                    }
+                    break
                 }
             }
 
-            if (startIndex === -1) return [];
-
-            // Get text after the header
-            const sectionText = text.substring(startIndex);
-            // Stop at the next double newline or distinct section header if possible
-            // specific regex to find bullet points in this section
-            const bulletPoints = sectionText.match(/^[•\-\*]\s+(.*)$/gm);
-
-            if (!bulletPoints) return [];
-
-            // Filter out "empty" or "no action" placeholders
-            const negativePhrases = [
-                "no specific action",
-                "no action items",
-                "no follow-up",
-                "no tasks",
-                "none identified",
-                "no specific facts",
-                "no deadlines",
-                "not specified"
-            ];
-
-            return bulletPoints.filter(bp => {
-                const cleanText = bp.replace(/^[•\-\*]\s+/, "").toLowerCase();
-                return !negativePhrases.some(phrase => cleanText.includes(phrase));
-            });
+            if (actionItems.length === 0) {
+                const bulletPattern = /^[•\-\*]\s+(.+)$/gm
+                let match
+                while ((match = bulletPattern.exec(summaryText)) !== null) {
+                    const item = match[1].trim()
+                    if (item && isValidTask(item) && !item.toLowerCase().includes('action items')) {
+                        actionItems.push(item)
+                    }
+                }
+            }
+            return actionItems
         }
 
         botMeetings.forEach((m: any) => {
             const summary = m.summaryText || ""
-            // First try to find explicit Action Items section
-            let actionItems = extractActionItems(summary);
+            let actionItems = extractBotActionItems(summary);
 
-            // Fallback: If no section found but summary exists, check if the ENTIRE summary is very short (likely just action items) 
-            // or just strict parsing if needed. 
-            // For now, if no explicit section, we assume NO action items to be safe and "real".
-
-            if (actionItems.length > 0) {
-                totalTasks += actionItems.length
-                actionItems.forEach((bp: string) => {
+            actionItems.forEach((ai: string, idx: number) => {
+                const isCompleted = completedTaskIds.has(`${m.meetingId}|${idx}`);
+                if (!isCompleted) {
+                    totalTasks++;
                     allActionItems.push({
-                        text: bp.replace(/^[•\-\*]\s+/, "").trim(),
+                        text: ai,
                         date: new Date(m.generatedAtMs || m.generatedAt)
                     })
-                })
-            }
+                }
+            })
         })
 
         extensionMeetings.forEach((m: any) => {
             if (m.actionItems && m.actionItems.length > 0) {
-                // Filter extension action items
+                const negativePhrases = [
+                    "no specific action", "no action items", "no follow-up",
+                    "no tasks", "none identified", "no specific facts",
+                    "no deadlines", "not specified", "not provided"
+                ];
+
                 const realActionItems = m.actionItems.filter((ai: any) => {
                     const text = typeof ai === 'string' ? ai : ai.text || "";
-                    const negativePhrases = [
-                        "no specific action",
-                        "no action items",
-                        "no follow-up",
-                        "no tasks",
-                        "none identified",
-                        "no specific facts",
-                        "no deadlines",
-                        "not specified",
-                        "not provided"
-                    ];
                     const cleanText = text.toLowerCase();
                     return !negativePhrases.some(phrase => cleanText.includes(phrase)) && text.length > 5;
                 });
 
-                if (realActionItems.length > 0) {
-                    totalTasks += realActionItems.length;
-                    realActionItems.forEach((ai: any) => {
+                realActionItems.forEach((ai: any, idx: number) => {
+                    const isCompleted = completedTaskIds.has(`${m.id}|${idx}`);
+                    if (!isCompleted) {
+                        totalTasks++;
                         allActionItems.push({
                             text: typeof ai === 'string' ? ai : ai.text || "",
                             date: new Date(m.createdAt)
                         })
-                    });
-                }
+                    }
+                });
             }
         })
 
@@ -171,7 +192,7 @@ export default function Page() {
 
             totalMeetings
         }
-    }, [botMeetings, botDetailedMeetings, extensionMeetings, firstName])
+    }, [botMeetings, botDetailedMeetings, extensionMeetings, firstName, completedTaskIds])
 
     return (
         <AppShell
@@ -267,7 +288,6 @@ export default function Page() {
                         <div className="flex items-center justify-between">
                             <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
                                 Recent Transcripts
-                                <span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">Last 4</span>
                             </h3>
                             <Link href="/transcripts" className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1">
                                 View all <ChevronRight className="size-4" />

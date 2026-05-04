@@ -36,7 +36,18 @@ export default function Page() {
   }, [searchParams, router])
 
   const [showBotPopup, setShowBotPopup] = useState(false)
-  const [activeTab, setActiveTab] = useState('bot')
+  const tabParam = searchParams.get('tab')
+  const [activeTab, setActiveTab] = useState(tabParam === 'extension' ? 'extension' : 'bot')
+  
+  const handleTabChange = useCallback((value: string) => {
+    setActiveTab(value)
+    const params = new URLSearchParams(searchParams.toString())
+    if (value === 'extension') params.set('tab', 'extension')
+    else params.delete('tab')
+    const query = params.toString()
+    router.replace(`/meetings${query ? `?${query}` : ''}`, { scroll: false })
+  }, [searchParams, router])
+
   const [dateFilter, setDateFilter] = useState<DateFilter>('all')
   const [sortOption, setSortOption] = useState<SortOption>('newest')
 
@@ -175,20 +186,17 @@ export default function Page() {
 
     setIsDeleting(meetingId)
     try {
-      if (type === 'extension') {
-          // Extension meetings logic...
-          toast.error("Deleting extension meetings is not supported yet");
-          return;
-      }
-
-      // Bot meetings - use proxy API route
       const token = await authUser?.getIdToken();
       if (!token) {
         toast.error('Please sign in to delete meetings');
         return;
       }
 
-      const response = await fetch(`/api/meeting-bot/meetings/${meetingId}`, {
+      const url = type === 'extension' 
+        ? `/api/extension-meetings?meetingId=${meetingId}`
+        : `/api/meeting-bot/meetings/${meetingId}`;
+
+      const response = await fetch(url, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -411,7 +419,7 @@ export default function Page() {
         </div>
       }
     >
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="w-full grid grid-cols-2">
           <TabsTrigger value="bot" className="flex-1 gap-2">
             <Bot className="size-4" />
