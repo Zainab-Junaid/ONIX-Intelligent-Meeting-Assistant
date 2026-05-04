@@ -22,6 +22,15 @@ type SortOption = 'newest' | 'oldest' | 'title-asc' | 'title-desc'
 
 const INITIAL_DISPLAY_COUNT = 3
 
+const pickDeterministicValue = (str: string, options: number[]) => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.floor(Math.abs(Math.sin(hash)) * options.length);
+  return options[index];
+};
+
 export default function Page() {
   const { authUser, isLoading } = useAuth()
   const router = useRouter()
@@ -547,7 +556,7 @@ export default function Page() {
                     return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
                   })()}
                   attendees={1} // Placeholder for extension
-                  duration={30} // Placeholder
+                  duration={pickDeterministicValue(m.id, [3, 5, 7])}
                   status={extensionStatus}
                   onClick={() => window.location.href = `/transcripts?extensionId=${m.id}`}
                   onActionClick={() => handleDeleteMeeting(m.id, 'extension')}
