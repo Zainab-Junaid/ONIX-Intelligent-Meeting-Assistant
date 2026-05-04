@@ -167,49 +167,33 @@ ${transcript.substring(0, 500)}...`,
 
       // Step 2: Generate Summary from (translated) text
       summaryResp = await callLLMGateway(
-        `Generate a comprehensive, detailed meeting summary that captures all important information. Structure your summary as follows:
+        `Generate a concise and neat meeting summary. Structure your summary exactly as follows:
 
 ## Executive Summary
-- Brief overview of the meeting purpose and main outcomes
+- Brief 1-2 sentence overview of the meeting purpose and main outcomes.
 
 ## Key Discussion Points
-- All major topics discussed
-- Important conversations and exchanges
-- Different perspectives shared
-- Any debates or decisions in progress
+- Use bullet points for the most important topics discussed.
+- Keep descriptions brief and focused.
 
 ## Decisions Made
-- All decisions reached during the meeting
-- Who made the decisions
-- Rationale behind key decisions
+- Clear bullet points of any final decisions reached.
 
 ## Action Items
-- Specific tasks identified
-- Who is responsible (include speaker names when mentioned)
-- Any deadlines or due dates mentioned
-- Priority level if indicated
+- Only list tasks if they were clearly agreed upon.
 
 ## Next Steps
-- Follow-up actions required
-- Future meetings or check-ins scheduled
-- Resources or information needed
-- Timeline for completion
+- Any upcoming meetings or immediate follow-ups.
 
-## Important Information
-- Key facts, figures, or data shared
-- Important dates, deadlines, or milestones
-- Resources or tools mentioned
-- Contacts or references provided
-
-Make the summary thorough, well-organized, and easy to scan. Include specific details, names, and context. Focus on actionable insights and information that will be useful for future reference.
-Ensure the format is a bulleted list.`,
+Keep the entire summary neat, professional, and free of fluff or unnecessary details.`,
         textToProcess
       );
 
       // Generate action items using the same prompt as the meeting bot
       actionItemsResp = await callLLMGateway(
         "Action items extraction from meeting transcript",
-        `You are extracting action items from a meeting transcript.
+        `Extract action items from the following meeting transcript. BE EXTREMELY STRICT.
+
 The transcript may be in any language — always extract items in ENGLISH, translating if needed.
 
 Return ONLY a valid JSON array. Each object must have:
@@ -221,12 +205,11 @@ Return ONLY a valid JSON array. Each object must have:
 }
 
 Rules:
-- Only include concrete, actionable tasks — not vague suggestions
-- If the transcript attributes a task to a specific person, include their name in "assignedTo"
-- If no one is assigned, set "assignedTo" to null
-- Set priority based on urgency cues in the transcript
-- There is no fixed number of action items — extract as many or as few as the meeting warrants
-- If no action items exist at all, return an empty array []
+- Only include items that are clear, actionable tasks (not just a topic of discussion).
+- It must have been explicitly assigned to a specific person or team.
+- The person must have agreed to it or been told to do it.
+- If no clear tasks are found that meet ALL these criteria, return an empty array [].
+- Do NOT include vague suggestions, ideas, or unresolved tasks.
 
 Transcript:
 ${textToProcess}`
