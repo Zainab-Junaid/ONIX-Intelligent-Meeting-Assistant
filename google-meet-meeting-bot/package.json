@@ -1,0 +1,61 @@
+{
+  "name": "meetingbotpoc",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "backend",
+    "frontend",
+    "playwright",
+    "bot"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
+    "generate": "prisma generate --schema=src/backend/schema.prisma",
+    "migrate": "prisma migrate dev --schema=src/backend/schema.prisma",
+    "studio": "prisma studio --schema=src/backend/schema.prisma",
+    "postinstall": "prisma generate --schema=src/backend/schema.prisma",
+    "db:seed": "node scripts/seed-database.cjs",
+    "worker:processing": "npx tsx src/infrastructure/workers/meetingProcessingWorker.ts",
+    "format": "prettier --write .",
+    "gen:auth": "node scripts/generate-auth.js",
+    "test:unit": "npx tsx tests/unit/speakerAnalytics.test.ts && npx tsx tests/unit/meetingAnalytics.test.ts",
+    "test:integration": "npx tsx tests/integration/analyticsUpserts.test.ts && npx tsx tests/integration/processingGuards.test.ts && npx tsx tests/integration/actionItemStorage.test.ts",
+    "test:e2e": "npx tsx tests/e2e/fullPipeline.test.ts",
+    "test": "npx tsx tests/run-all-tests.ts"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^3.3.44",
+    "@types/node": "^22.19.7",
+    "concurrently": "^8.0.0",
+    "pg": "^8.17.2",
+    "playwright": "^1.52.0",
+    "prettier": "^3.5.3",
+    "prisma": "^6.7.0",
+    "tsx": "^4.21.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.7.0",
+    "@socket.io/redis-adapter": "^8.3.0",
+    "@types/express": "^5.0.1",
+    "@types/socket.io": "^3.0.1",
+    "assemblyai": "^4.16.1",
+    "bullmq": "^5.0.0",
+    "cors": "^2.8.5",
+    "dockerode": "^4.0.2",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "firebase-admin": "^13.7.0",
+    "ioredis": "^5.8.2",
+    "mongoose": "^8.0.3",
+    "playwright": "^1.52.0",
+    "postgres": "^3.4.5",
+    "redis": "^5.10.0",
+    "socket.io": "^4.8.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3",
+    "uuid": "^11.1.0"
+  },
+  "prisma": {
+    "schema": "src/backend/schema.prisma"
+  }
+}

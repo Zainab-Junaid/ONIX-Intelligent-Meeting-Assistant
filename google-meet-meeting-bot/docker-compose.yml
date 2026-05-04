@@ -1,0 +1,109 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: meetingbot-postgres
+    environment:
+      # Credentials come from .env file - DO NOT hardcode
+      POSTGRES_USER: ${POSTGRES_USER:-meetingbot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-meetingbotpoc}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [meetingbot]
+
+  redis:
+    image: redis:7-alpine
+    container_name: meetingbot-redis
+    ports:
+      - "7379:6379"
+    networks: [meetingbot]
+
+  mongo:
+    image: mongo:7
+    container_name: meetingbot-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodata:/data/db
+    networks: [meetingbot]
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.be
+    image: laraibzafarlaraib/meetingbot-backend:latest
+    container_name: meetingbot-backend
+    ports:
+      - "3001:3001"
+      # Expose Prisma Studio port so you can access it from the host when running inside the backend container.
+      # Container listens on 5555; host maps 8555 -> 5555 to avoid conflicts if 5555/5556/5558 is already in use on Windows.
+      - "9555:5555"
+    env_file:
+      - .env
+    environment:
+      - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY}
+      # Database URL uses environment variables - no hardcoded passwords
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-meetingbot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-meetingbotpoc}
+      # MongoDB connection - MUST use docker network name, NOT localhost
+      - MONGODB_URI=mongodb://mongo:27017/meeting-transcripts
+      # Redis connection - MUST use docker network name for Socket.IO Pub/Sub
+      - REDIS_URL=redis://redis:6379
+      # Enable queue-based post-meeting processing
+      - ENABLE_QUEUE_PROCESSING=1
+      # Frontend URL for internal API calls (e.g., sending summary emails)
+      - FRONTEND_URL=http://host.docker.internal:3000
+      # Pass host path to auth.json so backend can mount it into bot containers
+      # This should be the absolute path to auth.json on the host machine
+      - AUTH_JSON_HOST_PATH=${AUTH_JSON_HOST_PATH:-}
+    depends_on:
+      - postgres
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./auth.json:/app/auth.json
+    networks: [meetingbot]
+
+  flush-worker:
+    image: laraibzafarlaraib/meetingbot-backend:latest
+    container_name: meetingbot-flush-worker
+    command: ["node", "src/dist/infrastructure/workers/flushWorker.js"]
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - MONGODB_URI=mongodb://mongo:27017/meeting-transcripts
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-meetingbot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-meetingbotpoc}
+    depends_on:
+      - redis
+      - mongo
+      - postgres
+    restart: unless-stopped
+    networks: [meetingbot]
+
+  processing-worker:
+    image: laraibzafarlaraib/meetingbot-backend:latest
+    container_name: meetingbot-processing-worker
+    command: ["node", "src/dist/infrastructure/workers/meetingProcessingWorker.js"]
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - MONGODB_URI=mongodb://mongo:27017/meeting-transcripts
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-meetingbot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-meetingbotpoc}
+    depends_on:
+      - redis
+      - mongo
+      - postgres
+    restart: unless-stopped
+    networks: [meetingbot]
+
+
+
+volumes:
+  pgdata:
+  mongodata:
+
+networks:
+  meetingbot:
+    name: meetingbot-net

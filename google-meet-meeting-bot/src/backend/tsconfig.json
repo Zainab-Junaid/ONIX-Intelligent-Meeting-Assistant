@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "../",
+    "outDir": "../dist",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "../backend/**/*.ts",
+    "../playwright/**/*.ts",
+    "../domain/**/*.ts",
+    "../infrastructure/**/*.ts",
+    "../application/**/*.ts",
+    "../config/**/*.ts",
+    "../lib/**/*.ts",
+    "../storage.ts",
+    "../summarize.ts"
+  ],
+  "exclude": [
+    "../playwright/**/extentionCaptionScraper.ts",
+    "../playwright/**/IncrementalcaptionScraper.ts"
+  ]
+}

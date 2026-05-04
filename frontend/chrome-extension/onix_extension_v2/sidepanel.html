@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Onix Assistant</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; }
+      .wrap { display: flex; flex-direction: column; gap: 8px; padding: 12px; width: 360px; }
+      textarea { width: 100%; height: 240px; }
+      button { padding: 8px 12px; border-radius: 8px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+      .row { display: flex; gap: 8px; }
+      .muted { color: #666; font-size: 12px; }
+      input[type="text"] { width: 100%; padding: 6px 8px; border-radius: 8px; border: 1px solid #ccc; }
+      
+      /* Transcript styling */
+      .transcript-container { 
+        height: 240px; 
+        overflow-y: auto; 
+        border: 1px solid #ccc; 
+        border-radius: 8px; 
+        padding: 8px; 
+        background: #f9f9f9;
+        font-size: 14px;
+        line-height: 1.4;
+      }
+      
+      .transcript-entry { 
+        margin-bottom: 8px; 
+        padding: 4px 8px; 
+        border-radius: 4px; 
+        background: white;
+        border-left: 3px solid #007bff;
+      }
+      
+      .speaker-name { 
+        font-weight: bold; 
+        color: #007bff; 
+        margin-right: 8px;
+      }
+      
+      .transcript-text { 
+        color: #333; 
+      }
+      
+      .timestamp { 
+        font-size: 11px; 
+        color: #999; 
+        float: right; 
+      }
+      
+      .connection-status { 
+        padding: 4px 8px; 
+        border-radius: 4px; 
+        font-size: 12px; 
+        text-align: center;
+      }
+      
+      .status-connected { 
+        background: #d4edda; 
+        color: #155724; 
+        border: 1px solid #c3e6cb;
+      }
+      
+      .status-disconnected { 
+        background: #f8d7da; 
+        color: #721c24; 
+        border: 1px solid #f5c6cb;
+      }
+      
+      .status-processing { 
+        background: #fff3cd; 
+        color: #856404; 
+        border: 1px solid #ffeaa7;
+      }
+    </style>
+    <script src="vendor/firebase/firebase-app-compat.js"></script>
+    <script src="vendor/firebase/firebase-auth-compat.js"></script>
+    <script src="vendor/firebase/firebase-firestore-compat.js"></script>
+  </head>
+  <body>
+    <div class="wrap">
+      <div><strong>Onix Meeting Assistant</strong></div>
+      <div id="auth" class="muted">Not signed in</div>
+      <div class="row">
+        <button id="signInBtn">Sign in</button>
+        <button id="signOutBtn" style="display:none">Sign out</button>
+      </div>
+      <input id="title" type="text" placeholder="Meeting title" />
+      <div class="row">
+        <select id="speakerSelect" style="flex: 1; padding: 6px 8px; border-radius: 8px; border: 1px solid #ccc;">
+          <option value="">Auto-detect speakers</option>
+        </select>
+        <button id="refreshParticipantsBtn" style="margin-left: 8px;">🔄</button>
+      </div>
+      <div class="row">
+        <button id="startBtn">Start Capture</button>
+        <button id="stopBtn" disabled>Stop Capture</button>
+        <button id="saveBtn" disabled>Save Transcript</button>
+        <button id="downloadBtn" disabled>Download</button>
+      </div>
+      <div id="connectionStatus" class="connection-status status-disconnected">Disconnected</div>
+      <div id="transcript" class="transcript-container">
+        <div class="muted">Live transcript will appear here...</div>
+      </div>
+      <div id="status" class="muted"></div>
+    </div>
+    <script src="sidepanel.js"></script>
+  </body>
+  </html>
+
+
