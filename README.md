@@ -1,5 +1,7 @@
 # ONIX — Intelligent Meeting Assistant
 
+Developed by: Zainab Junaid, Laraib Zafar, Uswah Fatima, Mubashra Iftikhar, Iqra Ishaq
+
 > ONIX is an intelligent meeting assistant that captures meeting audio, produces speaker-aware transcripts, generates concise summaries, extracts action items and decisions, and integrates with calendars and collaboration tools to help teams stay aligned.
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]() [![License: MIT](https://img.shields.io/badge/license-MIT-blue)]() [![Coverage Status](https://img.shields.io/badge/coverage---yellow)]()
@@ -284,18 +286,6 @@ Suggested deployment targets:
   - Lint -> Unit tests -> Build -> Publish artifacts
   - Optional: integration test job with docker-compose services
 
-Example scripts in package.json:
-```json
-{
-  "scripts": {
-    "dev": "concurrently \"yarn workspace backend dev\" \"yarn workspace frontend dev\"",
-    "build": "yarn workspace backend build && yarn workspace frontend build",
-    "test": "jest --runInBand",
-    "lint": "eslint . --ext .ts,.tsx"
-  }
-}
-```
-
 ## Observability & Monitoring
 - Structured logging (JSON) and centralized log aggregation (ELK, DataDog).
 - Metrics: request duration, transcription latency, processing queue length.
@@ -325,10 +315,6 @@ Q: Transcription is inaccurate on noisy audio — what to do?
 Q: Summaries are too verbose or too short
 - Tweak model prompts and max tokens used for summarization.
 - Provide meeting context and agenda to improve summarization.
-
-Q: How to run on-premise?
-- Deploy STT and LLM inference inside your network.
-- Set WHISPER_BACKEND=local and configure local model path; ensure GPU access.
 
 ## Roadmap
 Planned improvements:
